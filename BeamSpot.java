@@ -15,7 +15,7 @@ import org.jlab.io.hipo.HipoDataSource;
 // ==========================================
 // Beam spot analysis
 // 
-// From the previos work by S. Stepanyan 
+// From the previous work by S. Stepanyan 
 //  CLAS12 Note 2020-003
 // 
 // author: fbossu (at jlab.org);
@@ -176,15 +176,14 @@ public class BeamSpot {
       func.setParameter(0, h.getBinContent( h.getMaximumBin() ) );
       func.setParameter(1, h.getAxis().getBinCenter( h.getMaximumBin() )  ); 
       func.setParameter(2, 0.5 );
-      //func.setParameter(3, 10 );
       DataFitter.fit( func, h, "Q" );
-      func.show();
       g_results.addPoint( 
             h2_z_phi.getYAxis().getBinCenter( i ),
             func.getParameter(1),
             0,
             func.parameter(1).error() );
       if( check_slices ) {
+        func.show();
         c.cd(ic++);
         c.draw(h);
         func.setLineColor( 2 );
@@ -198,8 +197,10 @@ public class BeamSpot {
     // fit the graph 
     FitFunc func = new FitFunc( "f1", 0., 360. );
     func.setParameter(0,25.0);
-    func.setParameter(1,-1.0);
+    func.setParameter(1,1.0);
+    func.setParLimits(1,-0.1,10.);
     func.setParameter(2, Math.toRadians( 90.0 ) );
+    func.setParLimits(2, -0.001, 2*Math.PI +0.001 );
     DataFitter.fit( func, g_results,"");
     func.setLineColor(2);
     func.setOptStat(11110);
@@ -227,7 +228,8 @@ public class BeamSpot {
 
       ci.cd(1);
       ci.draw( a_g_results.get(i) );
-      
+
+      ci.save( "bin"+i+".png");      
     }
   
     // plot the parameters
@@ -237,26 +239,47 @@ public class BeamSpot {
     double[] X = new double[ theta_bins.length -1 ];
     double[] Y = new double[ theta_bins.length -1 ];
     double[] T = new double[ theta_bins.length -1 ];
+    double[] ET = new double[ theta_bins.length -1 ];
+
+    double[] EZ = new double[ theta_bins.length -1 ];
+    double[] ER = new double[ theta_bins.length -1 ];
+    double[] EP = new double[ theta_bins.length -1 ];
     for( int i=0; i<theta_bins.length-1; i++ ){
       Func1D f = a_fits.get(i);
       
       // average theta
       T[i] = (theta_bins[i] + theta_bins[i+1])/2.;
+      ET[i] = 0.0;
 
       Z[i] = f.getParameter( 0 );
+      EZ[i] = f.parameter( 0 ).error();
       R[i] = f.getParameter(1) * Math.tan( Math.toRadians( T[i] ) );
+      ER[i] = f.parameter(1).error() * Math.tan( Math.toRadians( T[i] ) );
 
       P[i] = Math.toDegrees( f.getParameter(2) );
+      EP[i] = Math.toDegrees( f.parameter(2).error() );
 
       X[i] = R[i] * Math.cos( f.getParameter(2) ); 
       Y[i] = R[i] * Math.sin( f.getParameter(2) ); 
+
+      System.out.println( P[i] + " " + f.getParameter(2) + " " + Math.toRadians( P[i] ));
  
     }
-    GraphErrors gZ = new GraphErrors("Z", T, Z );
+    GraphErrors gZ = new GraphErrors("Z", T, Z, ET, EZ );
+    gZ.setTitleX( "#theta (degrees)" );
+    gZ.setTitleY( "Z (cm)" );
     GraphErrors gR = new GraphErrors("R", T, R );
+    gR.setTitleX( "#theta (degrees)" );
+    gR.setTitleY( "R (cm)" );
     GraphErrors gP = new GraphErrors("Phi", T, P );
+    gP.setTitleX( "#theta (degrees)" );
+    gP.setTitleY( "#phi0 (degrees)" );
     GraphErrors gX = new GraphErrors("X", T, X );
+    gX.setTitleX( "#theta (degrees)" );
+    gX.setTitleY( "X (cm)" );
     GraphErrors gY = new GraphErrors("Y", T, Y );
+    gY.setTitleX( "#theta (degrees)" );
+    gY.setTitleY( "Y (cm)" );
 
 
     TCanvas cp = new TCanvas("cpars", 600,600 );
@@ -354,8 +377,12 @@ public class BeamSpot {
   public static void main( String[] args ){
 
     BeamSpot bs = new BeamSpot();
-    double[] bins = {5., 17.,  35.};
+
+    // set the theta bin edges
+    double[] bins = {5., 10., 20.,  35.};
     bs.setThetaBins( bins );
+
+    // call the init method to properly setup all the parameters
     bs.init();
 
     // loop over input files
