@@ -26,11 +26,22 @@ public class BeamSpot {
 
   // histograms
   // ----------------------------------------- 
-  H1F h1_z;
-  H1F h1_phi;
-  ArrayList<H2F> a_h2_z_phi;  
-  ArrayList<GraphErrors> a_g_results;
-  ArrayList<Func1D> a_fits;
+  
+  // general 1D histograms
+  H1F h1_z;   // z vertex distribution
+  H1F h1_phi; // phi distribution at vertex
+
+  // containers for theta bins
+  ArrayList<H2F> a_h2_z_phi;           // phi vs z at vertex
+  ArrayList<GraphErrors> a_g_results;  // mean position of the target window versus phi
+  ArrayList<Func1D> a_fits;            // fit functions of the target window position modulation in phi
+
+  // graphs for plotting the results as a function of theta
+  GraphErrors gZ;   // Z 
+  GraphErrors gR;   // R
+  GraphErrors gP;   // phi
+  GraphErrors gX;   // x 
+  GraphErrors gY;   // y
 
   // settings
   // -----------------------------------------
@@ -67,7 +78,7 @@ public class BeamSpot {
 
   public void setThetaBins( double[] bins ) { theta_bins = bins; }
 
-  // 
+  // processEvent   
   // ----------------------------------------- 
   public boolean processEvent( DataEvent event ){
     
@@ -95,9 +106,10 @@ public class BeamSpot {
       // check the quality of the particle
       if( checkParticle( part ) == false ) continue;
 
-      // compute phi from the transvers momentum components
+      // compute phi and theta from the transvers momentum components
       float phi = (float) Math.toDegrees( Math.atan2( part.py, part.px) );
-      if( phi < 0 ) phi += 360.0;
+      if( phi < 0 ) phi += 360.0;  // transform the phi interval from [-180,180) to [0,360)
+
       float theta = (float) Math.toDegrees( Math.atan2( Math.sqrt( part.px*part.px + part.py*part.py), part.pz ) );
 
       // find theta bin
@@ -131,7 +143,11 @@ public class BeamSpot {
   // ------------------------------------
   boolean checkParticle ( Particle p ){
 
+    // the particle should be an electron
     if ( p.pid != 11 ) return false;
+
+    // the particle momentum must be bigger than 1.5 GeV/c
+    if ( Math.sqrt( p.px * p.px + p.py * p.py + p.pz * p.pz ) < 1.5 ) return false;
 
     // TODO additional cuts
     return true; 
@@ -140,99 +156,13 @@ public class BeamSpot {
   // analysis
   // ------------------------------------
   public void analyze() {
+
+    // loop over theta bins
     for( int i=0; i<theta_bins.length-1; i++ ){
       analyze( i );
-    }
-  }
+    } // end loop
 
-  public void analyze( int i_theta_bin ) {
-
-    GraphErrors g_results = a_g_results.get(i_theta_bin);
-    H2F h2_z_phi = a_h2_z_phi.get(i_theta_bin);
-
-    // loop over the phi bins of the 2D histogram phi vs z
-    // and fit with a gaussian around the target window position
-    double xmin = 18.;
-    double xmax = 30.;
-
-    // skip bins that are not populated by checking the maximum 
-    // as reference we take the slice at phi=0
-    H1F h0 = h2_z_phi.sliceY(h2_z_phi.getYAxis().getBin(0.));
-    double max = h0.getBinContent( h0.getMaximumBin() );
-    
-    TCanvas c = null;
-    int ic = 0;
-    if( check_slices ){
-      c = new TCanvas("cc"+i_theta_bin,900,900);
-      c.divide( 6,7 );
-    }
-    // loop  over the y bins
-    for( int i=0;i<h2_z_phi.getYAxis().getNBins(); i++ ){
-
-      H1F h = h2_z_phi.sliceY( i );
-      if( h.getBinContent( h.getMaximumBin() ) < 0.7*max ) continue;
-
-      F1D func = new F1D( "func"+i, "[amp]*gaus(x,[mean],[sigma])", xmin, xmax ); 
-      func.setParameter(0, h.getBinContent( h.getMaximumBin() ) );
-      func.setParameter(1, h.getAxis().getBinCenter( h.getMaximumBin() )  ); 
-      func.setParameter(2, 0.5 );
-      DataFitter.fit( func, h, "Q" );
-      g_results.addPoint( 
-            h2_z_phi.getYAxis().getBinCenter( i ),
-            func.getParameter(1),
-            0,
-            func.parameter(1).error() );
-      if( check_slices ) {
-        func.show();
-        c.cd(ic++);
-        c.draw(h);
-        func.setLineColor( 2 );
-        c.draw(func,"same");
-        System.out.println( " ----- " + i);
-      }
-    } // end loop over bins
-
-    if( check_slices ) c.save("fits"+i_theta_bin+".png");
-   
-    // fit the graph 
-    FitFunc func = new FitFunc( "f1", 0., 360. );
-    func.setParameter(0,25.0);
-    func.setParameter(1,1.0);
-    func.setParLimits(1,-0.1,10.);
-    func.setParameter(2, Math.toRadians( 90.0 ) );
-    func.setParLimits(2, -0.001, 2*Math.PI +0.001 );
-    DataFitter.fit( func, g_results,"");
-    func.setLineColor(2);
-    func.setOptStat(11110);
-    func.show();
-    a_fits.add( func );
-  }
-
-  // plots
-  // ------------------------------------
-  public void plot() {
-
-    TCanvas c = new TCanvas("c",800,600);
-    c.divide(2,1);
-    c.cd(0);
-    c.draw( h1_z);
-    c.cd(1);
-    c.draw( h1_phi);
-
-    for( int i=0; i<theta_bins.length-1; i++ ){
-
-      TCanvas ci = new TCanvas( "c"+i, 800, 600 );
-      ci.divide(2,1);
-      ci.cd(0);
-      ci.draw( a_h2_z_phi.get(i) );
-
-      ci.cd(1);
-      ci.draw( a_g_results.get(i) );
-
-      ci.save( "bin"+i+".png");      
-    }
-  
-    // plot the parameters
+    // extract the results and organize them as a function of theta
     double[] Z = new double[ theta_bins.length -1 ];
     double[] R = new double[ theta_bins.length -1 ];
     double[] P = new double[ theta_bins.length -1 ];
@@ -261,26 +191,204 @@ public class BeamSpot {
 
       X[i] = R[i] * Math.cos( f.getParameter(2) ); 
       Y[i] = R[i] * Math.sin( f.getParameter(2) ); 
-
-      System.out.println( P[i] + " " + f.getParameter(2) + " " + Math.toRadians( P[i] ));
  
     }
-    GraphErrors gZ = new GraphErrors("Z", T, Z, ET, EZ );
+    
+    gZ = new GraphErrors("Z", T, Z, ET, EZ );
+    gR = new GraphErrors("R", T, R );
+    gP = new GraphErrors("Phi", T, P );
+    gX = new GraphErrors("X", T, X );
+    gY = new GraphErrors("Y", T, Y );
+
+    fitPol0( gZ );
+    fitPol0( gR );
+    fitPol0( gP );
+    fitPol0( gX );
+    fitPol0( gY );
+  }
+
+  // analysis of one theta bin
+  // ------------------------------------
+  public void analyze( int i_theta_bin ) {
+
+    GraphErrors g_results = a_g_results.get(i_theta_bin);
+    H2F h2_z_phi = a_h2_z_phi.get(i_theta_bin);
+
+    // loop over the phi bins of the 2D histogram phi vs z
+    // and fit with a gaussian around the target window position
+    
+    // initial search window 
+    double xmin = 20.;
+    double xmax = 31.;
+
+    // skip bins that are not populated by checking the maximum 
+    // as reference we take the slice at phi=0
+    H1F h0 = h2_z_phi.sliceY(h2_z_phi.getYAxis().getBin(0.));
+    double max = h0.getBinContent( h0.getMaximumBin() );
+
+    // for debug 
+    TCanvas c = null;
+    int ic = 0;
+    if( check_slices ){
+      c = new TCanvas("cc"+i_theta_bin,900,900);
+      c.divide( 6,7 );
+    } // end debug
+
+    // loop  over the phi bins
+    for( int i=0;i<h2_z_phi.getYAxis().getNBins(); i++ ){
+
+      // get the phi slice
+      H1F h = h2_z_phi.sliceY( i );
+
+      // quality check the phi slice
+      //if( h.getBinContent( h.getMaximumBin() ) < 0.7*max ) continue;
+
+      // check if the maximum is in the  expected range for the target window
+      double hmax = h.getMaximumBin() ;
+      if( hmax < xmin || hmax > xmax ) continue;
+
+      // check the entries around the peak
+      double rms = getRMSInInterval( h, xmin, xmax );
+      double rmin = h.getAxis().getBinCenter( h.getMaximumBin() ) - rms;
+      double rmax = h.getAxis().getBinCenter( h.getMaximumBin() ) + rms;
+      double entries = h.integral( h.getAxis().getBin(rmin) , h.getAxis().getBin(rmax) );
+      
+      if( entries < 10. ) continue;  // skip if there are not enough entries
+
+      // the fit function of the target window peak, a gaussian for simplicity
+      // the fit range is +- RMS around the peak
+      F1D func = new F1D( "func"+i, "[amp]*gaus(x,[mean],[sigma])", rmin, rmax ); 
+      func.setParameter(0, h.getBinContent( h.getMaximumBin() ) );
+      func.setParameter(1, h.getAxis().getBinCenter( h.getMaximumBin() )  ); 
+      func.setParameter(2, rms );
+      DataFitter.fit( func, h, "Q" );
+
+      // store the fir result in the corresponding graph
+      g_results.addPoint( 
+            h2_z_phi.getYAxis().getBinCenter( i ),
+            func.getParameter(1),
+            0,
+            func.parameter(1).error() );
+
+      // some plots for debug
+      if( check_slices ) {
+        func.show();
+        c.cd(ic++);
+        c.draw(h);
+        func.setLineColor( 2 );
+        c.draw(func,"same");
+        System.out.println( " ----- " + i);
+      } // end debug
+
+    } // end loop over bins
+
+    if( check_slices ) c.save("fits"+i_theta_bin+".png"); // debug
+   
+    // extract the modulation of the target z position versus phi by fitting the graph
+    // the function is defined below
+    FitFunc func = new FitFunc( "f1", 0., 360. );
+    func.setParameter(0,28.0);
+    func.setParameter(1,1.0);
+    func.setParLimits(1,-0.1,10.);
+    func.setParameter(2, Math.toRadians( 90.0 ) );
+    func.setParLimits(2, -0.001, 2*Math.PI +0.001 );
+    DataFitter.fit( func, g_results,"Q");
+    func.setLineColor(2);
+    func.setOptStat(11110);
+    func.show();
+
+    // store the fit function
+    a_fits.add( func );
+  }
+
+  // useful functions
+  // ---------------- 
+  private void fitPol0( GraphErrors g ){
+    double y = 0.;
+    for( int i=0; i<g.getDataSize(0); i++ ) y += g.getDataY(i);
+    y /= g.getDataSize(0);
+    F1D f = new F1D( "f"+g.getName(), "[p0]", g.getDataX(0), g.getDataX( g.getDataSize(0)-1 ) );
+    System.out.println( f.getName() + " " + y );
+    f.setParameter(0,y);
+    DataFitter.fit( f, g, "" );
+    f.setOptStat(10);
+    f.setLineColor(2);
+    f.show();
+  }
+
+
+  private double getMeanInInterval( H1F h, double min, double max ){
+    
+    double s = 0.;
+    double n = 0.;
+    int bmin = h.getAxis().getBin( min );
+    int bmax = h.getAxis().getBin( max );
+
+    for ( int i=bmin; i <= bmax; i++ ){
+      double X = h.getDataX(i);
+      double Y = h.getDataY(i);
+      s += X * Y;
+      n += Y;
+    }
+    return s/n;
+  }
+
+  private double getRMSInInterval( H1F h, double min, double max ){
+    double m = getMeanInInterval( h, min, max );
+
+    double s = 0.;
+    double n = 0.;
+    int bmin = h.getAxis().getBin( min );
+    int bmax = h.getAxis().getBin( max );
+
+    for ( int i=bmin; i <= bmax; i++ ){
+      double X = h.getDataX(i);
+      double Y = h.getDataY(i);
+      s += (X-m)*(X-m) * Y;
+      n += Y;
+    }
+    return Math.sqrt( s/n );
+  }
+
+  // plots
+  // ------------------------------------
+  public void plot() {
+
+    TCanvas c = new TCanvas("c",800,600);
+    c.divide(2,1);
+    c.cd(0);
+    c.draw( h1_z);
+    c.cd(1);
+    c.draw( h1_phi);
+
+    for( int i=0; i<theta_bins.length-1; i++ ){
+
+      TCanvas ci = new TCanvas( "c"+i, 800, 600 );
+      ci.divide(2,1);
+      ci.cd(0);
+      ci.draw( a_h2_z_phi.get(i) );
+
+      ci.cd(1);
+      ci.draw( a_g_results.get(i) );
+
+      ci.save( "bin"+i+".png");      
+    }
+  
+    // plot the results as a function of theta
     gZ.setTitleX( "#theta (degrees)" );
     gZ.setTitleY( "Z (cm)" );
-    GraphErrors gR = new GraphErrors("R", T, R );
+
     gR.setTitleX( "#theta (degrees)" );
     gR.setTitleY( "R (cm)" );
-    GraphErrors gP = new GraphErrors("Phi", T, P );
+
     gP.setTitleX( "#theta (degrees)" );
     gP.setTitleY( "#phi0 (degrees)" );
-    GraphErrors gX = new GraphErrors("X", T, X );
+
     gX.setTitleX( "#theta (degrees)" );
     gX.setTitleY( "X (cm)" );
-    GraphErrors gY = new GraphErrors("Y", T, Y );
+
     gY.setTitleX( "#theta (degrees)" );
     gY.setTitleY( "Y (cm)" );
-
 
     TCanvas cp = new TCanvas("cpars", 600,600 );
     cp.divide(2,3);
@@ -379,9 +487,10 @@ public class BeamSpot {
     BeamSpot bs = new BeamSpot();
 
     // set the theta bin edges
-    double[] bins = {5., 10., 20.,  35.};
+    double[] bins = {10., 11., 12., 13., 14., 16., 18., 22., 30.};
     bs.setThetaBins( bins );
 
+    bs.setCheckSlices(false);
     // call the init method to properly setup all the parameters
     bs.init();
 
