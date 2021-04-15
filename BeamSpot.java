@@ -1,4 +1,8 @@
 import java.io.File;
+import java.io.FileWriter;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.BufferedReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import org.jlab.groot.math.*;
@@ -17,7 +21,19 @@ import org.jlab.io.hipo.HipoDataSource;
 // 
 // From the previous work by S. Stepanyan 
 //  CLAS12 Note 2020-003
-// 
+//
+//  How to use it:
+//  -------------
+//  1) run the main method over hipo files
+//  java -Xms1024m -cp ".:$CLAS12DIR/lib/clas/*:$CLAS12DIR/lib/plugins/*" BeamSpot $*
+//
+//  2) if no hipo files are given as arguments, then a local histogram file can
+//     be used to re-analyse the data
+//
+// Output:
+// ------
+// The results are saved in the txt file called beamspot_results.txt
+//
 // author: fbossu (at jlab.org);
 // ==========================================
 
@@ -241,26 +257,27 @@ public class BeamSpot {
       H1F h = h2_z_phi.sliceY( i );
 
       // quality check the phi slice
-      //if( h.getBinContent( h.getMaximumBin() ) < 0.7*max ) continue;
+      if( h.getBinContent( h.getMaximumBin() ) < 0.4*max ) continue;
 
       // check if the maximum is in the  expected range for the target window
-      double hmax = h.getMaximumBin() ;
+      double hmax = h.getAxis().getBinCenter( h.getMaximumBin() ) ;
       if( hmax < xmin || hmax > xmax ) continue;
 
       // check the entries around the peak
-      double rms = getRMSInInterval( h, xmin, xmax );
-      double rmin = h.getAxis().getBinCenter( h.getMaximumBin() ) - rms;
-      double rmax = h.getAxis().getBinCenter( h.getMaximumBin() ) + rms;
+      double rms = getRMSInInterval( h, hmax - 6. , hmax + 6. );
+      //double rms = getRMSInInterval( h, xmin, xmax );
+      double rmin = h.getAxis().getBinCenter( h.getMaximumBin() ) - 1.5*rms;
+      double rmax = h.getAxis().getBinCenter( h.getMaximumBin() ) + 1.5*rms;
       double entries = h.integral( h.getAxis().getBin(rmin) , h.getAxis().getBin(rmax) );
       
-      if( entries < 10. ) continue;  // skip if there are not enough entries
+      if( entries < 40. ) continue;  // skip if there are not enough entries
 
       // the fit function of the target window peak, a gaussian for simplicity
       // the fit range is +- RMS around the peak
       F1D func = new F1D( "func"+i, "[amp]*gaus(x,[mean],[sigma])", rmin, rmax ); 
       func.setParameter(0, h.getBinContent( h.getMaximumBin() ) );
       func.setParameter(1, h.getAxis().getBinCenter( h.getMaximumBin() )  ); 
-      func.setParameter(2, rms );
+      func.setParameter(2, rms/2. );
       DataFitter.fit( func, h, "Q" );
 
       // store the fir result in the corresponding graph
@@ -277,7 +294,7 @@ public class BeamSpot {
         c.draw(h);
         func.setLineColor( 2 );
         c.draw(func,"same");
-        System.out.println( " ----- " + i);
+        //System.out.println( " ----- " + i);
       } // end debug
 
     } // end loop over bins
@@ -288,9 +305,9 @@ public class BeamSpot {
     // the function is defined below
     FitFunc func = new FitFunc( "f1", 0., 360. );
     func.setParameter(0,28.0);
-    func.setParameter(1,1.0);
+    func.setParameter(1,2.0);
     func.setParLimits(1,-0.1,10.);
-    func.setParameter(2, Math.toRadians( 90.0 ) );
+    func.setParameter(2, Math.toRadians( 260.0 ) );
     func.setParLimits(2, -0.001, 2*Math.PI +0.001 );
     DataFitter.fit( func, g_results,"Q");
     func.setLineColor(2);
@@ -350,6 +367,94 @@ public class BeamSpot {
     return Math.sqrt( s/n );
   }
 
+  // save 2D histograms to txt
+  public void saveHistogramsToTXT() {
+    try {
+      FileWriter wr  = new FileWriter( "h2_z_phi.txt" );
+      
+      // write a header with the theta binning
+      wr.write( "# theta bin edges\n# "); 
+      for( int i=0; i<theta_bins.length-1; i++){
+        wr.write( theta_bins[i] +",");
+      }
+      wr.write( theta_bins[theta_bins.length-1] +"\n");
+      // then write the x and y axis bins
+      H2F h0 = a_h2_z_phi.get(0);
+
+      wr.write( "# " );
+      Axis x = h0.getXAxis();
+      for( int j=0;j<x.getLimits().length-1;j++){
+        wr.write( x.getLimits()[j] + "," );
+      }
+      wr.write( x.getLimits()[x.getLimits().length-1] + "\n" );
+      wr.write( "# " );
+      Axis y = h0.getYAxis();
+      for( int j=0;j<y.getLimits().length-1;j++){
+        wr.write( y.getLimits()[j] + "," );
+      }
+      wr.write( y.getLimits()[y.getLimits().length-1] + "\n" );
+     
+      // for each theta bin, write a header for the theta bin
+      for( int i=0; i<theta_bins.length-1; i++){
+
+        wr.write( "# " + theta_bins[i] + "," + theta_bins[i+1] + "\n" );
+
+        H2F h = a_h2_z_phi.get(i);
+
+        for( int j=0; j < x.getNBins() ; j++ ){
+          for( int k=0; k < y.getNBins()-1 ; k++ ){
+            wr.write( h.getBinContent(j,k) + "," );
+          }
+          wr.write( h.getBinContent(j, y.getNBins()-1) + "\n" );
+        }
+      }
+      wr.close();
+    } catch ( IOException e ) {
+    }
+  }
+
+  // read 2D histograms from TXT
+  public void readHistogramsFromTXT(){
+
+    try {
+      BufferedReader br = new BufferedReader( new FileReader("h2_z_phi.txt") );
+
+      H2F h = null;
+      String line = "";
+
+      int i=0; // x bin counter
+
+      while ( ( line = br.readLine() ) != null ){
+        String[] ll = line.split(",");
+        if( ll.length == 2 ){
+          float fl = Float.parseFloat( ll[1] );
+          int bin = Arrays.binarySearch( theta_bins, fl );
+          System.out.println( fl + "  " + bin );
+          h = a_h2_z_phi.get(bin-1);
+          i = 0; // reset x counter
+        }
+        if( line.startsWith("#") == false ){
+            if( ll.length != h.getYAxis().getNBins() ) {
+              System.out.println( i + " error " + ll  ); 
+            }
+
+            for( int j=0; j<h.getYAxis().getNBins();j++ ){
+              float f = Float.parseFloat(ll[j]);
+              h.setBinContent(i,j,f);
+            }
+            i++;
+        }
+
+      }      
+
+    } catch ( IOException e ) {
+      System.err.println( e );
+      System.exit(-1);
+    }
+
+  }
+
+
   // plots
   // ------------------------------------
   public void plot() {
@@ -404,6 +509,35 @@ public class BeamSpot {
     cp.draw( gY );    
 
     cp.save("results.png");
+
+    // save the results on a txt file
+    double p0Z  = gZ.getFunction().getParameter(0);
+    double Ep0Z = gZ.getFunction().parameter(0).error();
+
+    double p0R  = gR.getFunction().getParameter(0);
+    double Ep0R = gR.getFunction().parameter(0).error();
+
+    double p0P  = gP.getFunction().getParameter(0);
+    double Ep0P = gP.getFunction().parameter(0).error();
+
+    double p0X  = gX.getFunction().getParameter(0);
+    double Ep0X = gX.getFunction().parameter(0).error();
+
+    double p0Y  = gY.getFunction().getParameter(0);
+    double Ep0Y = gY.getFunction().parameter(0).error();
+
+    try {
+      FileWriter wr = new FileWriter( "beamspot_results.txt" );
+      
+      wr.write( "Z    = " + p0Z + " +- " + Ep0Z + "\n" );
+      wr.write( "R    = " + p0R + " +- " + Ep0R + "\n" );
+      wr.write( "Phi0 = " + p0P + " +- " + Ep0P + "\n" );
+      wr.write( "X    = " + p0X + " +- " + Ep0X + "\n" );
+      wr.write( "Y    = " + p0Y + " +- " + Ep0Y + "\n" );
+      
+      wr.close();
+    } catch ( IOException e ) {} 
+
   }
 
   // fit function
@@ -484,6 +618,16 @@ public class BeamSpot {
   // ------------------------------------
   public static void main( String[] args ){
 
+    // test for analysis type: analysis hipo files or re-analyse local histgrams
+    // check if some hipo files are given as arguent
+    boolean histAnalysis = true;
+    for( String s : args ) {
+      if ( s.endsWith( ".hipo" ) == true ){
+        histAnalysis = false;
+      }
+    }
+
+
     BeamSpot bs = new BeamSpot();
 
     // set the theta bin edges
@@ -491,26 +635,33 @@ public class BeamSpot {
     bs.setThetaBins( bins );
 
     bs.setCheckSlices(false);
+
     // call the init method to properly setup all the parameters
     bs.init();
 
-    // loop over input files
-    for( String s : args ) {
-      if ( s.endsWith( ".hipo" ) == false ) continue;
+    if( histAnalysis == true ){
+      System.out.println( " ########## reading histogram file ############ " );
+      bs.readHistogramsFromTXT();
+    }
+    else {
+      // loop over input files
+      for( String s : args ) {
+        if ( s.endsWith( ".hipo" ) == false ) continue;
 
-      HipoDataSource reader = new HipoDataSource();
-      reader.open( s );
-      int filecount = 0;
-      while(reader.hasEvent() ) {
-              DataEvent event = reader.getNextEvent();
-        bs.processEvent( event );
-        filecount++;
-        //if( filecount > 1000 ) break;
-      }// end loop on events
-      reader.close();
+        HipoDataSource reader = new HipoDataSource();
+        reader.open( s );
+        int filecount = 0;
+        while(reader.hasEvent() ) {
+          DataEvent event = reader.getNextEvent();
+          bs.processEvent( event );
+          filecount++;
+        }// end loop on events
+        reader.close();
 
-    }// end loop on input files
+      }// end loop on input files
 
+      bs.saveHistogramsToTXT();
+    }
     bs.analyze();    
     bs.plot();    
   }
