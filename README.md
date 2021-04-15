@@ -26,7 +26,7 @@ or
 This class analyses electrons and it stores the z position and the $\phi$ at the vertex for various $\theta$ bins.<br>
 The z position of the target foil is extracted for each $\phi$ bin and each $\theta$ bin and its modulation versus $\phi$ is fitted with the function  
 
-![formula](https://render.githubusercontent.com/render/math?math=f\(\phi\) = A - B  cos\(\phi - \phi_0\)/\tan\(\theta\) )
+<img src="https://render.githubusercontent.com/render/math?math=f\(\phi\\)=A-Bcos\(\phi-\phi_0\\)/\tan\(\theta\\)">
 
 The (x,y) position of the beam is then computed using B and $\phi_0$. The average values over the $\theta$ bins are then saved as results.
 
