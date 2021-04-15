@@ -634,7 +634,7 @@ public class BeamSpot {
     double[] bins = {10., 11., 12., 13., 14., 16., 18., 22., 30.};
     bs.setThetaBins( bins );
 
-    bs.setCheckSlices(false);
+    bs.setCheckSlices(true);
 
     // call the init method to properly setup all the parameters
     bs.init();
