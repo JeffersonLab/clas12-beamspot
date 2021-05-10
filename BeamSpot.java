@@ -7,6 +7,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import org.jlab.groot.math.*;
 import org.jlab.groot.ui.TCanvas;
+import org.jlab.groot.graphics.EmbeddedCanvasTabbed;
+import org.jlab.groot.graphics.EmbeddedCanvas;
 import org.jlab.groot.data.GraphErrors;
 import org.jlab.groot.data.H1F;
 import org.jlab.groot.data.H2F;
@@ -15,6 +17,9 @@ import org.jlab.groot.fitter.DataFitter;
 import org.jlab.io.base.DataBank;
 import org.jlab.io.base.DataEvent;
 import org.jlab.io.hipo.HipoDataSource;
+
+import javax.swing.JFrame;
+import java.awt.Dimension;
 
 // ==========================================
 // Beam spot analysis
@@ -52,6 +57,9 @@ public class BeamSpot {
   ArrayList<GraphErrors> a_g_results;  // mean position of the target window versus phi
   ArrayList<Func1D> a_fits;            // fit functions of the target window position modulation in phi
 
+  // containers for z slice fits
+  ArrayList< ArrayList<H1F> > a_hz;
+
   // graphs for plotting the results as a function of theta
   GraphErrors gZ;   // Z 
   GraphErrors gR;   // R
@@ -75,6 +83,8 @@ public class BeamSpot {
     
     h1_z   = new H1F( "h1_z",   "z vertex"  , 200, -20, 50 );
     h1_phi = new H1F( "h1_phi", "phi vertex", 200, 0, 360 );
+
+    a_hz = new ArrayList<ArrayList<H1F>>();
 
     check_slices = true;
   }
@@ -243,12 +253,8 @@ public class BeamSpot {
     double max = h0.getBinContent( h0.getMaximumBin() );
 
     // for debug 
-    TCanvas c = null;
+    ArrayList<H1F> z_slices = new ArrayList<H1F>();
     int ic = 0;
-    if( check_slices ){
-      c = new TCanvas("cc"+i_theta_bin,900,900);
-      c.divide( 6,7 );
-    } // end debug
 
     // loop  over the phi bins
     for( int i=0;i<h2_z_phi.getYAxis().getNBins(); i++ ){
@@ -287,19 +293,12 @@ public class BeamSpot {
             0,
             func.parameter(1).error() );
 
-      // some plots for debug
-      if( check_slices ) {
-        func.show();
-        c.cd(ic++);
-        c.draw(h);
-        func.setLineColor( 2 );
-        c.draw(func,"same");
-        //System.out.println( " ----- " + i);
-      } // end debug
+      z_slices.add( h );
 
     } // end loop over bins
 
-    if( check_slices ) c.save("fits"+i_theta_bin+".png"); // debug
+    // debug
+    a_hz.add( z_slices );
    
     // extract the modulation of the target z position versus phi by fitting the graph
     // the function is defined below
@@ -459,16 +458,40 @@ public class BeamSpot {
   // ------------------------------------
   public void plot() {
 
-    TCanvas c = new TCanvas("c",800,600);
-    c.divide(2,1);
-    c.cd(0);
-    c.draw( h1_z);
-    c.cd(1);
-    c.draw( h1_phi);
+    //TCanvas c = new TCanvas("c",800,600);
+    //c.divide(2,1);
+    //c.cd(0);
+    //c.draw( h1_z);
+    //c.cd(1);
+    //c.draw( h1_phi);
 
+    EmbeddedCanvasTabbed czfits = new EmbeddedCanvasTabbed( false );
+    for( int i=0; i<theta_bins.length-1; i++ ){
+      czfits.addCanvas( "cz"+i );
+      EmbeddedCanvas ci = czfits.getCanvas( "cz"+i );
+      ci.divide( 6,7 );
+      int j=0;
+      for( H1F h : a_hz.get(i) ){
+        ci.cd(j);
+        Func1D func = h.getFunction();
+        func.setLineColor( 2 );
+        ci.draw( h );
+        j++;
+      }
+    }
+    JFrame czframe = new JFrame();
+    czframe.add(czfits);
+    czframe.pack();
+    czframe.setMinimumSize( new Dimension( 800,600 ) );
+    czframe.setVisible(true);
+    
+    
+    EmbeddedCanvasTabbed canvas = new EmbeddedCanvasTabbed( "parameters" );
     for( int i=0; i<theta_bins.length-1; i++ ){
 
-      TCanvas ci = new TCanvas( "c"+i, 800, 600 );
+      //TCanvas ci = new TCanvas( "c"+i, 800, 600 );
+      canvas.addCanvas( "c"+i );
+      EmbeddedCanvas ci = canvas.getCanvas( "c"+i );
       ci.divide(2,1);
       ci.cd(0);
       ci.draw( a_h2_z_phi.get(i) );
@@ -495,7 +518,8 @@ public class BeamSpot {
     gY.setTitleX( "#theta (degrees)" );
     gY.setTitleY( "Y (cm)" );
 
-    TCanvas cp = new TCanvas("cpars", 600,600 );
+    //TCanvas cp = new TCanvas("cpars", 600,600 );
+    EmbeddedCanvas cp = canvas.getCanvas( "parameters" );
     cp.divide(2,3);
     cp.cd(0);
     cp.draw( gZ );    
@@ -509,6 +533,15 @@ public class BeamSpot {
     cp.draw( gY );    
 
     cp.save("results.png");
+    canvas.setActiveCanvas( "parameters" );
+
+
+    JFrame frame = new JFrame();
+    frame.add(canvas);
+    frame.pack();
+    frame.setMinimumSize( new Dimension( 800,600 ) );
+    frame.setVisible(true);
+
 
     // save the results on a txt file
     double p0Z  = gZ.getFunction().getParameter(0);
