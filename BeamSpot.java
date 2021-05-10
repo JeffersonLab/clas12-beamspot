@@ -262,6 +262,8 @@ public class BeamSpot {
       // get the phi slice
       H1F h = h2_z_phi.sliceY( i );
 
+      if( h.integral() < 10 ) continue;  // to skip empty bins
+
       // quality check the phi slice
       if( h.getBinContent( h.getMaximumBin() ) < 0.4*max ) continue;
 
