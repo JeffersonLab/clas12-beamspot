@@ -263,6 +263,7 @@ public class BeamSpot {
       H1F h = h2_z_phi.sliceY( i );
 
       if( h.integral() < 10 ) continue;  // to skip empty bins
+System.out.println( h.integral() );
 
       // quality check the phi slice
       if( h.getBinContent( h.getMaximumBin() ) < 0.4*max ) continue;
@@ -343,8 +344,8 @@ public class BeamSpot {
     int bmax = h.getAxis().getBin( max );
 
     for ( int i=bmin; i <= bmax; i++ ){
-      double X = h.getDataX(i);
-      double Y = h.getDataY(i);
+      double X = h.getAxis().getBinCenter(i);
+      double Y = h.getBinContent(i);
       s += X * Y;
       n += Y;
     }
@@ -360,8 +361,8 @@ public class BeamSpot {
     int bmax = h.getAxis().getBin( max );
 
     for ( int i=bmin; i <= bmax; i++ ){
-      double X = h.getDataX(i);
-      double Y = h.getDataY(i);
+      double X = h.getAxis().getBinCenter(i);
+      double Y = h.getBinContent(i);
       s += (X-m)*(X-m) * Y;
       n += Y;
     }
