@@ -1,4 +1,5 @@
 import java.io.File;
+import java.io.PrintWriter;
 import java.io.FileWriter;
 import java.io.FileReader;
 import java.io.IOException;
@@ -283,10 +284,12 @@ System.out.println( h.integral() );
 
       // the fit function of the target window peak, a gaussian for simplicity
       // the fit range is +- RMS around the peak
-      F1D func = new F1D( "func"+i, "[amp]*gaus(x,[mean],[sigma])", rmin, rmax ); 
+      F1D func = new F1D( "func"+i, "[amp]*gaus(x,[mean],[sigma]) + [c] + [d]*x", rmin, rmax ); 
       func.setParameter(0, h.getBinContent( h.getMaximumBin() ) );
       func.setParameter(1, h.getAxis().getBinCenter( h.getMaximumBin() )  ); 
       func.setParameter(2, rms/2. );
+      func.setParameter(3, 1. );
+      func.setParameter(4, .01 );
       DataFitter.fit( func, h, "Q" );
 
       // store the fir result in the corresponding graph
@@ -324,11 +327,18 @@ System.out.println( h.integral() );
   // ---------------- 
   private void fitPol0( GraphErrors g ){
     double y = 0.;
+    double ey = 0.;
     for( int i=0; i<g.getDataSize(0); i++ ) y += g.getDataY(i);
     y /= g.getDataSize(0);
-    F1D f = new F1D( "f"+g.getName(), "[p0]", g.getDataX(0), g.getDataX( g.getDataSize(0)-1 ) );
-    System.out.println( f.getName() + " " + y );
-    f.setParameter(0,y);
+
+    for( int i=0; i<g.getDataSize(0); i++ ) ey += (g.getDataY(i)-y)*(g.getDataY(i)-y);
+    ey /= g.getDataSize(0);
+    ey = Math.sqrt( ey );
+
+    F1D f = new F1D( "fff"+g.getName(), "[p0]", g.getDataX(0), g.getDataX( g.getDataSize(0)-1 ) );
+    System.out.println( " ++++++++++++ " + f.getName() + " " + y + " " + ey);
+    f.setParameter(0,1);
+    f.parameter(0).setError( 2*ey );
     DataFitter.fit( f, g, "" );
     f.setOptStat(10);
     f.setLineColor(2);
@@ -478,7 +488,19 @@ System.out.println( h.integral() );
         ci.cd(j);
         Func1D func = h.getFunction();
         func.setLineColor( 2 );
+        func.setOptStat(1001100);
         ci.draw( h );
+        F1D fg = new F1D( "fg"+h.getName(), "[amp]*gaus(x,[mean],[sigma])", func.getMin(), func.getMax() );
+        fg.setParameter(0, func.getParameter(0) );
+        fg.setParameter(1, func.getParameter(1) );
+        fg.setParameter(2, func.getParameter(2) );
+        fg.setLineColor(3);
+        ci.draw(fg,"same");
+        F1D fb = new F1D( "fb"+h.getName(), "[c]+[d]*x", func.getMin(), func.getMax() );
+        fb.setParameter(0, func.getParameter(3) );
+        fb.setParameter(1, func.getParameter(4) );
+        fb.setLineColor(4);
+        ci.draw(fb,"same");
         j++;
       }
     }
@@ -574,6 +596,17 @@ System.out.println( h.integral() );
       wr.close();
     } catch ( IOException e ) {} 
 
+
+    try {
+      PrintWriter wr = new PrintWriter( "beamspot_ccdb_table.txt" );
+      
+      wr.printf( "# x y ex ey\n" );
+      wr.printf( "0 0 0 " );
+      wr.printf(  "%.2f %.2f %.2f %.2f\n", p0X ,p0Y, Ep0X,Ep0Y );
+      //wr.write(  p0X + " " +p0Y + " " + Ep0X + " " + Ep0Y + "\n" );
+      
+      wr.close();
+    } catch ( IOException e ) {} 
   }
 
   // fit function
