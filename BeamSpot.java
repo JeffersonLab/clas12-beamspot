@@ -4,6 +4,7 @@ import java.io.FileWriter;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.BufferedReader;
+import java.util.List;
 import java.util.ArrayList;
 import java.util.Arrays;
 import org.jlab.groot.math.*;
@@ -13,11 +14,16 @@ import org.jlab.groot.graphics.EmbeddedCanvas;
 import org.jlab.groot.data.GraphErrors;
 import org.jlab.groot.data.H1F;
 import org.jlab.groot.data.H2F;
+import org.jlab.groot.data.TDirectory;
 import org.jlab.groot.math.F1D;
 import org.jlab.groot.fitter.DataFitter;
 import org.jlab.io.base.DataBank;
 import org.jlab.io.base.DataEvent;
 import org.jlab.io.hipo.HipoDataSource;
+import org.jlab.utils.benchmark.BenchmarkTimer;
+import org.jlab.utils.options.OptionParser;
+import org.jlab.groot.base.AxisAttributes;
+import org.jlab.groot.base.GStyle;
 
 import javax.swing.JFrame;
 import java.awt.Dimension;
@@ -30,11 +36,13 @@ import java.awt.Dimension;
 //
 //  How to use it:
 //  -------------
-//  1) run the main method over hipo files
+//  1) run the main method over HIPO DST files:
 //  java -Xms1024m -cp ".:$CLAS12DIR/lib/clas/*:$CLAS12DIR/lib/plugins/*" BeamSpot $*
 //
-//  2) if no hipo files are given as arguments, then a local histogram file can
-//     be used to re-analyse the data
+//  2) if the -H/-T options are used, the input files are assumed to instead
+//     be HIPO/TXT files of histograms.
+//
+//  The -O option can be used to change the prefix for the output files.
 //
 // Output:
 // ------
@@ -46,9 +54,11 @@ import java.awt.Dimension;
 
 public class BeamSpot {
 
+  String outputPrefix = "BeamSpot";
+
   // histograms
   // ----------------------------------------- 
-  
+
   // general 1D histograms
   H1F h1_z;   // z vertex distribution
   H1F h1_phi; // phi distribution at vertex
@@ -75,15 +85,15 @@ public class BeamSpot {
 
   // 
   // ----------------------------------------- 
-  public BeamSpot() {
-    //h2_z_phi = new H2F("h2_z_phi","h2_phi_vs_z", 50, 15,40,36,-180,180);
+  public BeamSpot(String outputPrefix) {
+    this.outputPrefix = outputPrefix;
 
     a_h2_z_phi = new ArrayList<H2F>();
     a_g_results = new ArrayList<GraphErrors>();
     a_fits = new ArrayList<Func1D>();
-    
+
     h1_z   = new H1F( "h1_z",   "z vertex"  , 200, -20, 50 );
-    h1_phi = new H1F( "h1_phi", "phi vertex", 200, 0, 360 );
+    h1_phi = new H1F( "h1_phi", "phi vertex", 180, -30, 330 );
 
     a_hz = new ArrayList<ArrayList<H1F>>();
 
@@ -94,8 +104,15 @@ public class BeamSpot {
   // -----------------------------------------
   public void init() {
     for( int i = 0; i<theta_bins.length-1; i++ ){
-      a_h2_z_phi.add( new H2F("h2_z_phi_"+i, "h2_phi_vs_z "+ theta_bins[i], 50, 15,40,36,0,360) );
-      a_g_results.add( new GraphErrors() );
+      H2F h = new H2F("h2_z_phi_"+i, "#theta = "+(theta_bins[i]+theta_bins[i+1])/2, 100, 20,40,72,-30,330);
+      h.setTitleX("Z vertex (cm)");
+      h.setTitleY("#phi (degrees)");
+      GraphErrors g = new GraphErrors();
+      g.setTitle("#theta = "+(theta_bins[i]+theta_bins[i+1])/2);
+      g.setTitleX("#phi (degrees)");
+      g.setTitleY("Z vertex (cm)");
+      a_h2_z_phi.add( h );
+      a_g_results.add( g );
     }
   }  
 
@@ -108,7 +125,7 @@ public class BeamSpot {
   // processEvent   
   // ----------------------------------------- 
   public boolean processEvent( DataEvent event ){
-    
+
     if( event.hasBank( "REC::Particle" ) == false ||
         event.hasBank( "REC::Track" )    == false    ) return false;
 
@@ -121,7 +138,7 @@ public class BeamSpot {
 
     // loop over tracks
     for( int i=0; i < btrk.rows(); i++){
-      
+
       trk.load( btrk, i );
 
       // check the quality of the track
@@ -136,6 +153,7 @@ public class BeamSpot {
       // compute phi and theta from the transvers momentum components
       float phi = (float) Math.toDegrees( Math.atan2( part.py, part.px) );
       if( phi < 0 ) phi += 360.0;  // transform the phi interval from [-180,180) to [0,360)
+      if( phi > 330) phi -= 360.0; // pop the split sector back together
 
       float theta = (float) Math.toDegrees( Math.atan2( Math.sqrt( part.px*part.px + part.py*part.py), part.pz ) );
 
@@ -197,35 +215,43 @@ public class BeamSpot {
     double[] Y = new double[ theta_bins.length -1 ];
     double[] T = new double[ theta_bins.length -1 ];
     double[] ET = new double[ theta_bins.length -1 ];
-
     double[] EZ = new double[ theta_bins.length -1 ];
     double[] ER = new double[ theta_bins.length -1 ];
     double[] EP = new double[ theta_bins.length -1 ];
+    double[] EX = new double[ theta_bins.length -1 ];
+    double[] EY = new double[ theta_bins.length -1 ];
+
     for( int i=0; i<theta_bins.length-1; i++ ){
       Func1D f = a_fits.get(i);
-      
+
       // average theta
       T[i] = (theta_bins[i] + theta_bins[i+1])/2.;
       ET[i] = 0.0;
 
       Z[i] = f.getParameter( 0 );
       EZ[i] = f.parameter( 0 ).error();
-      R[i] = f.getParameter(1) * Math.tan( Math.toRadians( T[i] ) );
+
+      R[i] = Math.abs(f.getParameter(1) * Math.tan( Math.toRadians( T[i] ) ) );
       ER[i] = f.parameter(1).error() * Math.tan( Math.toRadians( T[i] ) );
 
-      P[i] = Math.toDegrees( f.getParameter(2) );
+      P[i] = Math.IEEEremainder( Math.toDegrees(f.getParameter(2))+180, 360) + 180;
       EP[i] = Math.toDegrees( f.parameter(2).error() );
 
       X[i] = R[i] * Math.cos( f.getParameter(2) ); 
-      Y[i] = R[i] * Math.sin( f.getParameter(2) ); 
- 
+      Y[i] = R[i] * Math.sin( f.getParameter(2) );
+
+      EX[i] = Math.sqrt(R[i]*R[i] +
+          Math.pow(f.parameter(1).error()*Math.sin(f.getParameter(2))*f.parameter(2).error(),2));
+
+      EY[i] = Math.sqrt(R[i]*R[i] +
+          Math.pow(f.parameter(1).error()*Math.cos(f.getParameter(2))*f.parameter(2).error(),2));
     }
-    
-    gZ = new GraphErrors("Z", T, Z, ET, EZ );
-    gR = new GraphErrors("R", T, R );
-    gP = new GraphErrors("Phi", T, P );
-    gX = new GraphErrors("X", T, X );
-    gY = new GraphErrors("Y", T, Y );
+
+    gZ = new GraphErrors("Z",   T, Z, ET, EZ );
+    gR = new GraphErrors("R",   T, R, ET, ER );
+    gP = new GraphErrors("Phi", T, P, ET, EP );
+    gX = new GraphErrors("X",   T, X, ET, EX );
+    gY = new GraphErrors("Y",   T, Y, ET, EY );
 
     fitPol0( gZ );
     fitPol0( gR );
@@ -243,15 +269,10 @@ public class BeamSpot {
 
     // loop over the phi bins of the 2D histogram phi vs z
     // and fit with a gaussian around the target window position
-    
-    // initial search window 
-    double xmin = 20.;
-    double xmax = 31.;
 
-    // skip bins that are not populated by checking the maximum 
-    // as reference we take the slice at phi=0
-    H1F h0 = h2_z_phi.sliceY(h2_z_phi.getYAxis().getBin(0.));
-    double max = h0.getBinContent( h0.getMaximumBin() );
+    // peak validity window:
+    final double xmin = 20.;
+    final double xmax = 31.;
 
     // for debug 
     ArrayList<H1F> z_slices = new ArrayList<H1F>();
@@ -262,25 +283,26 @@ public class BeamSpot {
 
       // get the phi slice
       H1F h = h2_z_phi.sliceY( i );
+      h.setTitle("");
 
       if( h.integral() < 10 ) continue;  // to skip empty bins
-System.out.println( h.integral() );
-
-      // quality check the phi slice
-      if( h.getBinContent( h.getMaximumBin() ) < 0.4*max ) continue;
 
       // check if the maximum is in the  expected range for the target window
-      double hmax = h.getAxis().getBinCenter( h.getMaximumBin() ) ;
+      final double hmax = h.getAxis().getBinCenter( h.getMaximumBin() ) ;
       if( hmax < xmin || hmax > xmax ) continue;
 
       // check the entries around the peak
-      double rms = getRMSInInterval( h, hmax - 6. , hmax + 6. );
-      //double rms = getRMSInInterval( h, xmin, xmax );
-      double rmin = h.getAxis().getBinCenter( h.getMaximumBin() ) - 1.5*rms;
+      final double rms = getRMSInInterval( h, hmax - 5. , hmax + 5. );
+      double rmin = h.getAxis().getBinCenter( h.getMaximumBin() ) - 2.0*rms;
       double rmax = h.getAxis().getBinCenter( h.getMaximumBin() ) + 1.5*rms;
-      double entries = h.integral( h.getAxis().getBin(rmin) , h.getAxis().getBin(rmax) );
-      
-      if( entries < 40. ) continue;  // skip if there are not enough entries
+
+      // truncate fit range if out of bounds:
+      if (rmin < h.getAxis().getBinCenter(1)) rmin = h.getAxis().getBinCenter(1);
+      if (rmax > h.getAxis().getBinCenter(h.getAxis().getNBins()-1))
+          rmax = h.getAxis().getBinCenter(h.getAxis().getNBins()-1);
+
+      // skip if there are not enough entries
+      if( h.integral( h.getAxis().getBin(rmin) , h.getAxis().getBin(rmax) ) < 50 ) continue;
 
       // the fit function of the target window peak, a gaussian for simplicity
       // the fit range is +- RMS around the peak
@@ -290,14 +312,28 @@ System.out.println( h.integral() );
       func.setParameter(2, rms/2. );
       func.setParameter(3, 1. );
       func.setParameter(4, .01 );
+      func.setOptStat(110);
       DataFitter.fit( func, h, "Q" );
+
+      // skip if Gaussian amplitude too small:
+      if (func.getParameter(0) < 8) continue;
+
+      // skip if Gaussian sigma too small:
+      if (Math.abs(func.getParameter(2)) < 0.1) continue;
+
+      // skip if Gaussian sigma too big:
+      if (Math.abs(func.getParameter(2)) > 2) continue;
+
+      // skip if chi-square bad:
+      if (func.getChiSquare()/func.getNDF() < 0.05) continue;
+      if (func.getChiSquare()/func.getNDF() > 10) continue;
 
       // store the fir result in the corresponding graph
       g_results.addPoint( 
-            h2_z_phi.getYAxis().getBinCenter( i ),
-            func.getParameter(1),
-            0,
-            func.parameter(1).error() );
+          h2_z_phi.getYAxis().getBinCenter( i ),
+          func.getParameter(1),
+          0,
+          func.parameter(1).error() );
 
       z_slices.add( h );
 
@@ -305,18 +341,17 @@ System.out.println( h.integral() );
 
     // debug
     a_hz.add( z_slices );
-   
+
     // extract the modulation of the target z position versus phi by fitting the graph
     // the function is defined below
     FitFunc func = new FitFunc( "f1", 0., 360. );
     func.setParameter(0,28.0);
     func.setParameter(1,2.0);
-    func.setParLimits(1,-0.1,10.);
-    func.setParameter(2, Math.toRadians( 260.0 ) );
-    func.setParLimits(2, -0.001, 2*Math.PI +0.001 );
+    func.setParameter(2, 0.);
+    func.setLineWidth(3);
     DataFitter.fit( func, g_results,"Q");
     func.setLineColor(2);
-    func.setOptStat(11110);
+    func.setOptStat(110);
     func.show();
 
     // store the fit function
@@ -335,19 +370,20 @@ System.out.println( h.integral() );
     ey /= g.getDataSize(0);
     ey = Math.sqrt( ey );
 
-    F1D f = new F1D( "fff"+g.getName(), "[p0]", g.getDataX(0), g.getDataX( g.getDataSize(0)-1 ) );
-    System.out.println( " ++++++++++++ " + f.getName() + " " + y + " " + ey);
+    F1D f = new F1D( "fff"+g.getName(), "[mean]", g.getDataX(0), g.getDataX( g.getDataSize(0)-1 ) );
+    //System.out.println( " ++++++++++++ " + f.getName() + " " + y + " " + ey);
     f.setParameter(0,1);
     f.parameter(0).setError( 2*ey );
-    DataFitter.fit( f, g, "" );
+    DataFitter.fit( f, g, "Q" );
     f.setOptStat(10);
     f.setLineColor(2);
+    f.setLineWidth(2);
     f.show();
   }
 
 
   private double getMeanInInterval( H1F h, double min, double max ){
-    
+
     double s = 0.;
     double n = 0.;
     int bmin = h.getAxis().getBin( min );
@@ -382,8 +418,9 @@ System.out.println( h.integral() );
   // save 2D histograms to txt
   public void saveHistogramsToTXT() {
     try {
-      FileWriter wr  = new FileWriter( "h2_z_phi.txt" );
-      
+      System.out.println("Writing to: "+outputPrefix+"_histos.txt ...");
+      FileWriter wr  = new FileWriter(outputPrefix+"_histos.txt");
+
       // write a header with the theta binning
       wr.write( "# theta bin edges\n# "); 
       for( int i=0; i<theta_bins.length-1; i++){
@@ -405,7 +442,7 @@ System.out.println( h.integral() );
         wr.write( y.getLimits()[j] + "," );
       }
       wr.write( y.getLimits()[y.getLimits().length-1] + "\n" );
-     
+
       // for each theta bin, write a header for the theta bin
       for( int i=0; i<theta_bins.length-1; i++){
 
@@ -426,10 +463,11 @@ System.out.println( h.integral() );
   }
 
   // read 2D histograms from TXT
-  public void readHistogramsFromTXT(){
+  public void readHistogramsFromTXT(String filename){
 
     try {
-      BufferedReader br = new BufferedReader( new FileReader("h2_z_phi.txt") );
+      System.out.println("Reading from: "+filename+" ...");
+      BufferedReader br = new BufferedReader( new FileReader(filename) );
 
       H2F h = null;
       String line = "";
@@ -441,20 +479,19 @@ System.out.println( h.integral() );
         if( ll.length == 2 ){
           float fl = Float.parseFloat( ll[1] );
           int bin = Arrays.binarySearch( theta_bins, fl );
-          System.out.println( fl + "  " + bin );
           h = a_h2_z_phi.get(bin-1);
           i = 0; // reset x counter
         }
         if( line.startsWith("#") == false ){
-            if( ll.length != h.getYAxis().getNBins() ) {
-              System.out.println( i + " error " + ll  ); 
-            }
+          //if( ll.length != h.getYAxis().getNBins() ) {
+          //  System.out.println( i + " error " + ll  ); 
+          //}
 
-            for( int j=0; j<h.getYAxis().getNBins();j++ ){
-              float f = Float.parseFloat(ll[j]);
-              h.setBinContent(i,j,f);
-            }
-            i++;
+          for( int j=0; j<h.getYAxis().getNBins();j++ ){
+            float f = Float.parseFloat(ll[j]);
+            h.setBinContent(i,j,f);
+          }
+          i++;
         }
 
       }      
@@ -466,85 +503,115 @@ System.out.println( h.integral() );
 
   }
 
+  public void readHistogramsFromTXT(List<String> filenames) {
+    for (String f : filenames) readHistogramsFromTXT(f);
+  }
+
+  public void saveHistograms() {
+    System.out.println("Writing to: "+outputPrefix+"_histos.hipo ...");
+    TDirectory d = new TDirectory();
+    d.mkdir("/slices");
+    d.cd("/slices");
+    for (H2F h : a_h2_z_phi) d.addDataSet(h);
+    d.writeFile(outputPrefix+"_histos.hipo");
+  }
+
+  public void readHistograms(String filename) {
+    System.out.println("Reading from: "+filename+" ...");
+    TDirectory d = new TDirectory();
+    d.readFile(filename);
+    d.cd();
+    for (int i = 0; i<theta_bins.length-1; i++) {
+      H2F h = (H2F)d.getObject("/slices/h2_z_phi_"+i);
+      // histograms saved in a HIPO file don't retain full
+      // attributes, so here we refill:
+      for (int ix = 0; ix<h.getXAxis().getNBins(); ix++) {
+        for (int iy = 0; iy<h.getYAxis().getNBins(); iy++) {
+          for (int iz = 0; iz<h.getBinContent(ix,iy); iz++) {
+            double x = h.getXAxis().getBinCenter(ix);
+            double y = h.getYAxis().getBinCenter(iy);
+            a_h2_z_phi.get(i).fill(x,y);
+          }
+        }
+      }
+    }
+  }
+  public void readHistograms(List<String> filenames) {
+    for (String f : filenames) readHistograms(f);
+  }
 
   // plots
   // ------------------------------------
-  public void plot() {
-
-    //TCanvas c = new TCanvas("c",800,600);
-    //c.divide(2,1);
-    //c.cd(0);
-    //c.draw( h1_z);
-    //c.cd(1);
-    //c.draw( h1_phi);
+  public void plot(boolean write) {
 
     EmbeddedCanvasTabbed czfits = new EmbeddedCanvasTabbed( false );
     for( int i=0; i<theta_bins.length-1; i++ ){
-      czfits.addCanvas( "cz"+i );
-      EmbeddedCanvas ci = czfits.getCanvas( "cz"+i );
-      ci.divide( 6,7 );
+      String cname = String.format("%.1f",(theta_bins[i]+theta_bins[i+1])/2);
+      czfits.addCanvas( cname );
+      EmbeddedCanvas ci = czfits.getCanvas( cname );
+      ci.divide(7,8);
       int j=0;
       for( H1F h : a_hz.get(i) ){
         ci.cd(j);
         Func1D func = h.getFunction();
         func.setLineColor( 2 );
-        func.setOptStat(1001100);
+        func.setLineWidth( 2 );
+        func.setOptStat(110);
+        ci.setAxisLabelSize(8);
+        ci.setAxisLabelSize(8);
+        ci.setAxisTitleSize(8);
+        ci.setAxisTitleSize(8);
         ci.draw( h );
-        F1D fg = new F1D( "fg"+h.getName(), "[amp]*gaus(x,[mean],[sigma])", func.getMin(), func.getMax() );
-        fg.setParameter(0, func.getParameter(0) );
-        fg.setParameter(1, func.getParameter(1) );
-        fg.setParameter(2, func.getParameter(2) );
-        fg.setLineColor(3);
-        ci.draw(fg,"same");
+        //F1D fg = new F1D( "fg"+h.getName(), "[amp]*gaus(x,[mean],[sigma])", func.getMin(), func.getMax() );
+        //fg.setParameter(0, func.getParameter(0) );
+        //fg.setParameter(1, func.getParameter(1) );
+        //fg.setParameter(2, func.getParameter(2) );
+        //fg.setLineColor(4);
+        //ci.draw(fg,"same");
         F1D fb = new F1D( "fb"+h.getName(), "[c]+[d]*x", func.getMin(), func.getMax() );
         fb.setParameter(0, func.getParameter(3) );
         fb.setParameter(1, func.getParameter(4) );
-        fb.setLineColor(4);
+        fb.setLineColor(5);
+        fb.setLineWidth(2);
         ci.draw(fb,"same");
+        // can't do this because it adds to the legend ...
+        //ci.draw(func,"same");
         j++;
       }
     }
-    JFrame czframe = new JFrame();
+
+    JFrame czframe = new JFrame("Beam Spot - Gaussian Fits");
     czframe.add(czfits);
     czframe.pack();
-    czframe.setMinimumSize( new Dimension( 800,600 ) );
+    czframe.setMinimumSize( new Dimension( 1260,1004 ) );
     czframe.setVisible(true);
-    
-    
-    EmbeddedCanvasTabbed canvas = new EmbeddedCanvasTabbed( "parameters" );
-    for( int i=0; i<theta_bins.length-1; i++ ){
 
-      //TCanvas ci = new TCanvas( "c"+i, 800, 600 );
-      canvas.addCanvas( "c"+i );
-      EmbeddedCanvas ci = canvas.getCanvas( "c"+i );
+    EmbeddedCanvasTabbed canvas = new EmbeddedCanvasTabbed( "Parameters" );
+    for( int i=0; i<theta_bins.length-1; i++ ){
+      String cname = String.format("%.1f",(theta_bins[i]+theta_bins[i+1])/2);
+      canvas.addCanvas( cname );
+      EmbeddedCanvas ci = canvas.getCanvas( cname );
       ci.divide(2,1);
       ci.cd(0);
       ci.draw( a_h2_z_phi.get(i) );
-
       ci.cd(1);
       ci.draw( a_g_results.get(i) );
-
-      ci.save( "bin"+i+".png");      
+      if (write) ci.save( outputPrefix+"_bin"+i+".png");
     }
-  
+
     // plot the results as a function of theta
     gZ.setTitleX( "#theta (degrees)" );
-    gZ.setTitleY( "Z (cm)" );
-
+    gZ.setTitleY( "z_0 (cm)" );
     gR.setTitleX( "#theta (degrees)" );
-    gR.setTitleY( "R (cm)" );
-
+    gR.setTitleY( "r_0 (cm)" );
     gP.setTitleX( "#theta (degrees)" );
-    gP.setTitleY( "#phi0 (degrees)" );
-
+    gP.setTitleY( "#phi_0 (degrees)" );
     gX.setTitleX( "#theta (degrees)" );
-    gX.setTitleY( "X (cm)" );
-
+    gX.setTitleY( "x_0 (cm)" );
     gY.setTitleX( "#theta (degrees)" );
-    gY.setTitleY( "Y (cm)" );
+    gY.setTitleY( "y_0 (cm)" );
 
-    //TCanvas cp = new TCanvas("cpars", 600,600 );
-    EmbeddedCanvas cp = canvas.getCanvas( "parameters" );
+    EmbeddedCanvas cp = canvas.getCanvas( "Parameters" );
     cp.divide(2,3);
     cp.cd(0);
     cp.draw( gZ );    
@@ -557,56 +624,49 @@ System.out.println( h.integral() );
     cp.cd(4);
     cp.draw( gY );    
 
-    cp.save("results.png");
-    canvas.setActiveCanvas( "parameters" );
+    if (write) cp.save(outputPrefix+"_results.png");
+    canvas.setActiveCanvas( "Parameters" );
 
-
-    JFrame frame = new JFrame();
+    JFrame frame = new JFrame("BeamSpot - Modulation Fits");
     frame.add(canvas);
     frame.pack();
-    frame.setMinimumSize( new Dimension( 800,600 ) );
+    frame.setMinimumSize( new Dimension( 800, 700 ) );
     frame.setVisible(true);
 
-
     // save the results on a txt file
-    double p0Z  = gZ.getFunction().getParameter(0);
-    double Ep0Z = gZ.getFunction().parameter(0).error();
+    final double p0Z  = gZ.getFunction().getParameter(0);
+    final double Ep0Z = gZ.getFunction().parameter(0).error();
+    final double p0R  = gR.getFunction().getParameter(0);
+    final double Ep0R = gR.getFunction().parameter(0).error();
+    final double p0P  = gP.getFunction().getParameter(0);
+    final double Ep0P = gP.getFunction().parameter(0).error();
+    final double p0X  = gX.getFunction().getParameter(0);
+    final double Ep0X = gX.getFunction().parameter(0).error();
+    final double p0Y  = gY.getFunction().getParameter(0);
+    final double Ep0Y = gY.getFunction().parameter(0).error();
 
-    double p0R  = gR.getFunction().getParameter(0);
-    double Ep0R = gR.getFunction().parameter(0).error();
+    if (write) {
+      try {
+        System.out.println("Writing to: "+outputPrefix+"_results.txt ...");
+        FileWriter wr = new FileWriter( outputPrefix+"_results.txt" );
+        wr.write( "Z    = " + p0Z + " +- " + Ep0Z + "\n" );
+        wr.write( "R    = " + p0R + " +- " + Ep0R + "\n" );
+        wr.write( "Phi0 = " + p0P + " +- " + Ep0P + "\n" );
+        wr.write( "X    = " + p0X + " +- " + Ep0X + "\n" );
+        wr.write( "Y    = " + p0Y + " +- " + Ep0Y + "\n" );
+        wr.close();
+      } catch ( IOException e ) {} 
 
-    double p0P  = gP.getFunction().getParameter(0);
-    double Ep0P = gP.getFunction().parameter(0).error();
-
-    double p0X  = gX.getFunction().getParameter(0);
-    double Ep0X = gX.getFunction().parameter(0).error();
-
-    double p0Y  = gY.getFunction().getParameter(0);
-    double Ep0Y = gY.getFunction().parameter(0).error();
-
-    try {
-      FileWriter wr = new FileWriter( "beamspot_results.txt" );
-      
-      wr.write( "Z    = " + p0Z + " +- " + Ep0Z + "\n" );
-      wr.write( "R    = " + p0R + " +- " + Ep0R + "\n" );
-      wr.write( "Phi0 = " + p0P + " +- " + Ep0P + "\n" );
-      wr.write( "X    = " + p0X + " +- " + Ep0X + "\n" );
-      wr.write( "Y    = " + p0Y + " +- " + Ep0Y + "\n" );
-      
-      wr.close();
-    } catch ( IOException e ) {} 
-
-
-    try {
-      PrintWriter wr = new PrintWriter( "beamspot_ccdb_table.txt" );
-      
-      wr.printf( "# x y ex ey\n" );
-      wr.printf( "0 0 0 " );
-      wr.printf(  "%.2f %.2f %.2f %.2f\n", p0X ,p0Y, Ep0X,Ep0Y );
-      //wr.write(  p0X + " " +p0Y + " " + Ep0X + " " + Ep0Y + "\n" );
-      
-      wr.close();
-    } catch ( IOException e ) {} 
+      try {
+        System.out.println("Writing to: "+outputPrefix+"_ccdb_table.txt ...");
+        PrintWriter wr = new PrintWriter( outputPrefix+"_ccdb_table.txt" );
+        wr.printf( "# x y ex ey\n" );
+        wr.printf( "0 0 0 " );
+        wr.printf(  "%.2f %.2f %.2f %.2f\n", p0X ,p0Y, Ep0X,Ep0Y );
+        //wr.write(  p0X + " " +p0Y + " " + Ep0X + " " + Ep0Y + "\n" );
+        wr.close();
+      } catch ( IOException e ) {}
+    }
   }
 
   // fit function
@@ -614,10 +674,9 @@ System.out.println( h.integral() );
   class FitFunc extends Func1D {
     public FitFunc( String name, double min, double max ) {
       super( name, min, max );
-      
-      addParameter( "a" );
-      addParameter( "b" );
-      addParameter( "c" );
+      addParameter( "z_0" );
+      addParameter( "A" );
+      addParameter( "#phi_0" );
     }
 
     @Override
@@ -625,7 +684,6 @@ System.out.println( h.integral() );
       return this.getParameter(0) - this.getParameter(1) * Math.cos( x * Math.PI/180.0 - this.getParameter(2) );
     }
   }
-
 
   // bank interfaces
   // ---------------------------------------
@@ -687,52 +745,63 @@ System.out.println( h.integral() );
   // ------------------------------------
   public static void main( String[] args ){
 
-    // test for analysis type: analysis hipo files or re-analyse local histgrams
-    // check if some hipo files are given as arguent
-    boolean histAnalysis = true;
-    for( String s : args ) {
-      if ( s.endsWith( ".hipo" ) == true ){
-        histAnalysis = false;
-      }
+    OptionParser cli = new OptionParser("BeamSpot");
+    cli.addOption("-H", "0", "Interpret inputs as HIPO histogram files (instead of DSTs) and add them together");
+    cli.addOption("-T", "0", "Interpret input as a TXT histogram file (instead of HIPO DSTs)");
+    cli.addOption("-O", "BeamSpot", "String prefix for output file names");
+    cli.addOption("-X", "0", "Run with no output files");
+    cli.addOption("-B", "0", "Batch mode, no graphics");
+    cli.parse(args);
+
+    if (cli.getInputList().size()==0) {
+      System.err.println(cli.getUsageString());
+      System.err.println("BeamSpot:  ERROR: No input files specified.");
+      System.exit(1);
     }
 
-
-    BeamSpot bs = new BeamSpot();
+    BeamSpot bs = new BeamSpot(cli.getOption("-O").stringValue());
 
     // set the theta bin edges
-    double[] bins = {10., 11., 12., 13., 14., 16., 18., 22., 30.};
-    bs.setThetaBins( bins );
+    bs.setThetaBins( new double[]{10,11,12,13,14,16,18,22,30} );
 
     bs.setCheckSlices(true);
 
     // call the init method to properly setup all the parameters
     bs.init();
 
-    if( histAnalysis == true ){
-      System.out.println( " ########## reading histogram file ############ " );
-      bs.readHistogramsFromTXT();
+    if( !cli.getOption("-H").stringValue().equals("0") ) {
+      bs.readHistograms(cli.getInputList());
+    }
+    else if( !cli.getOption("-T").stringValue().equals("0") ) {
+      bs.readHistogramsFromTXT(cli.getInputList());
     }
     else {
       // loop over input files
-      for( String s : args ) {
-        if ( s.endsWith( ".hipo" ) == false ) continue;
-
+      int n = 0;
+      BenchmarkTimer bt = new BenchmarkTimer();
+      for( String s : cli.getInputList() ) {
         HipoDataSource reader = new HipoDataSource();
+        bt.resume();
         reader.open( s );
-        int filecount = 0;
         while(reader.hasEvent() ) {
           DataEvent event = reader.getNextEvent();
           bs.processEvent( event );
-          filecount++;
+          n += 1;
         }// end loop on events
+        bt.pause();
+        System.out.println(String.format("### EVENT RATE:  %.4f kHz",n/bt.getSeconds()/1000));
         reader.close();
-
       }// end loop on input files
 
-      bs.saveHistogramsToTXT();
+      if (cli.getOption("-X").stringValue().equals("0")) {
+        bs.saveHistogramsToTXT();
+        bs.saveHistograms();
+      }
     }
-    bs.analyze();    
-    bs.plot();    
+    if (cli.getOption("-B").stringValue().equals("0")) {
+      bs.analyze();
+      bs.plot(cli.getOption("-X").stringValue().equals("0"));
+    }
   }
 
 }
