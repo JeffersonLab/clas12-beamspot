@@ -24,7 +24,7 @@ import org.jlab.utils.benchmark.BenchmarkTimer;
 import org.jlab.utils.options.OptionParser;
 import org.jlab.groot.base.AxisAttributes;
 import org.jlab.groot.base.GStyle;
-
+import org.jlab.groot.graphics.GraphicsAxis;
 import javax.swing.JFrame;
 import java.awt.Dimension;
 
@@ -540,6 +540,12 @@ public class BeamSpot {
     for (String f : filenames) readHistograms(f);
   }
 
+  public void zoom(GraphErrors g, GraphicsAxis a) {
+      final double min = g.getMin(); 
+      final double max = g.getMax();
+      a.setRange(min - 0.3*(max-min), max + 0.3*(max-min));
+  }
+
   // plots
   // ------------------------------------
   public void plot(boolean write) {
@@ -614,15 +620,20 @@ public class BeamSpot {
     EmbeddedCanvas cp = canvas.getCanvas( "Parameters" );
     cp.divide(2,3);
     cp.cd(0);
-    cp.draw( gZ );    
+    cp.draw( gZ );
+    this.zoom(gZ, cp.getPad(0).getAxisY());
     cp.cd(1);
-    cp.draw( gR );    
+    cp.draw( gR );
+    this.zoom(gR, cp.getPad(1).getAxisY());
     cp.cd(2);
-    cp.draw( gP );    
+    cp.draw( gP );
+    cp.getPad(2).getAxisY().setRange(0,360);
     cp.cd(3);
-    cp.draw( gX );    
+    cp.draw( gX );
+    this.zoom(gX, cp.getPad(3).getAxisY());
     cp.cd(4);
-    cp.draw( gY );    
+    cp.draw( gY );
+    this.zoom(gY, cp.getPad(4).getAxisY());
 
     if (write) cp.save(outputPrefix+"_results.png");
     canvas.setActiveCanvas( "Parameters" );
