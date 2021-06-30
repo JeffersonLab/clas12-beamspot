@@ -9,4 +9,4 @@ echo $CLAS12DIR
 
 rm *.class
 javac -Xlint:deprecation -cp "$CLAS12DIR/lib/clas/*:$CLAS12DIR/lib/plugins/*" BeamSpot.java
-java -Xms1024m -cp ".:$CLAS12DIR/lib/clas/*:$CLAS12DIR/lib/plugins/*" BeamSpot $*
+java -Xmx512m -Xms512m -cp ".:$CLAS12DIR/lib/clas/*:$CLAS12DIR/lib/plugins/*" BeamSpot $*
