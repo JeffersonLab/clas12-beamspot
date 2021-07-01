@@ -231,7 +231,7 @@ public class BeamSpot {
       Z[i] = f.getParameter( 0 );
       EZ[i] = f.parameter( 0 ).error();
 
-      R[i] = Math.abs(f.getParameter(1) * Math.tan( Math.toRadians( T[i] ) ) );
+      R[i] = f.getParameter(1) * Math.tan( Math.toRadians( T[i] ) );
       ER[i] = f.parameter(1).error() * Math.tan( Math.toRadians( T[i] ) );
 
       P[i] = Math.IEEEremainder( Math.toDegrees(f.getParameter(2))+180, 360) + 180;
@@ -240,11 +240,15 @@ public class BeamSpot {
       X[i] = R[i] * Math.cos( f.getParameter(2) ); 
       Y[i] = R[i] * Math.sin( f.getParameter(2) );
 
-      EX[i] = Math.sqrt(R[i]*R[i] +
-          Math.pow(f.parameter(1).error()*Math.sin(f.getParameter(2))*f.parameter(2).error(),2));
+      EX[i] = Math.sqrt( Math.pow(Math.cos(f.getParameter(2))*ER[i],2) +
+                         Math.pow(R[i]*Math.sin(f.getParameter(2))*f.parameter(2).error(),2) );
 
-      EY[i] = Math.sqrt(R[i]*R[i] +
-          Math.pow(f.parameter(1).error()*Math.cos(f.getParameter(2))*f.parameter(2).error(),2));
+      EY[i] = Math.sqrt( Math.pow(Math.sin(f.getParameter(2))*ER[i],2) +
+                         Math.pow(R[i]*Math.cos(f.getParameter(2))*f.parameter(2).error(),2) );
+
+      // munge the signs for more human-friendly plots:
+      if (R[i] < 0) P[i] += 180;
+      R[i] = Math.abs(R[i]);
     }
 
     gZ = new GraphErrors("Z",   T, Z, ET, EZ );
@@ -627,7 +631,7 @@ public class BeamSpot {
     this.zoom(gR, cp.getPad(1).getAxisY());
     cp.cd(2);
     cp.draw( gP );
-    cp.getPad(2).getAxisY().setRange(0,360);
+    this.zoom(gP, cp.getPad(2).getAxisY());
     cp.cd(3);
     cp.draw( gX );
     this.zoom(gX, cp.getPad(3).getAxisY());
