@@ -24,7 +24,7 @@ import org.jlab.utils.benchmark.BenchmarkTimer;
 import org.jlab.utils.options.OptionParser;
 import org.jlab.groot.base.AxisAttributes;
 import org.jlab.groot.base.GStyle;
-
+import org.jlab.groot.graphics.GraphicsAxis;
 import javax.swing.JFrame;
 import java.awt.Dimension;
 
@@ -231,7 +231,7 @@ public class BeamSpot {
       Z[i] = f.getParameter( 0 );
       EZ[i] = f.parameter( 0 ).error();
 
-      R[i] = Math.abs(f.getParameter(1) * Math.tan( Math.toRadians( T[i] ) ) );
+      R[i] = f.getParameter(1) * Math.tan( Math.toRadians( T[i] ) );
       ER[i] = f.parameter(1).error() * Math.tan( Math.toRadians( T[i] ) );
 
       P[i] = Math.IEEEremainder( Math.toDegrees(f.getParameter(2))+180, 360) + 180;
@@ -240,11 +240,15 @@ public class BeamSpot {
       X[i] = R[i] * Math.cos( f.getParameter(2) ); 
       Y[i] = R[i] * Math.sin( f.getParameter(2) );
 
-      EX[i] = Math.sqrt(R[i]*R[i] +
-          Math.pow(f.parameter(1).error()*Math.sin(f.getParameter(2))*f.parameter(2).error(),2));
+      EX[i] = Math.sqrt( Math.pow(Math.cos(f.getParameter(2))*ER[i],2) +
+                         Math.pow(R[i]*Math.sin(f.getParameter(2))*f.parameter(2).error(),2) );
 
-      EY[i] = Math.sqrt(R[i]*R[i] +
-          Math.pow(f.parameter(1).error()*Math.cos(f.getParameter(2))*f.parameter(2).error(),2));
+      EY[i] = Math.sqrt( Math.pow(Math.sin(f.getParameter(2))*ER[i],2) +
+                         Math.pow(R[i]*Math.cos(f.getParameter(2))*f.parameter(2).error(),2) );
+
+      // munge the signs for more human-friendly plots:
+      if (R[i] < 0) P[i] += 180;
+      R[i] = Math.abs(R[i]);
     }
 
     gZ = new GraphErrors("Z",   T, Z, ET, EZ );
@@ -540,6 +544,12 @@ public class BeamSpot {
     for (String f : filenames) readHistograms(f);
   }
 
+  public void zoom(GraphErrors g, GraphicsAxis a) {
+      final double min = g.getMin(); 
+      final double max = g.getMax();
+      a.setRange(min - 0.3*(max-min), max + 0.3*(max-min));
+  }
+
   // plots
   // ------------------------------------
   public void plot(boolean write) {
@@ -614,15 +624,20 @@ public class BeamSpot {
     EmbeddedCanvas cp = canvas.getCanvas( "Parameters" );
     cp.divide(2,3);
     cp.cd(0);
-    cp.draw( gZ );    
+    cp.draw( gZ );
+    this.zoom(gZ, cp.getPad(0).getAxisY());
     cp.cd(1);
-    cp.draw( gR );    
+    cp.draw( gR );
+    this.zoom(gR, cp.getPad(1).getAxisY());
     cp.cd(2);
-    cp.draw( gP );    
+    cp.draw( gP );
+    this.zoom(gP, cp.getPad(2).getAxisY());
     cp.cd(3);
-    cp.draw( gX );    
+    cp.draw( gX );
+    this.zoom(gX, cp.getPad(3).getAxisY());
     cp.cd(4);
-    cp.draw( gY );    
+    cp.draw( gY );
+    this.zoom(gY, cp.getPad(4).getAxisY());
 
     if (write) cp.save(outputPrefix+"_results.png");
     canvas.setActiveCanvas( "Parameters" );
