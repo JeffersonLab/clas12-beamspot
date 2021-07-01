@@ -376,7 +376,7 @@ public class BeamSpot {
 
     F1D f = new F1D( "fff"+g.getName(), "[mean]", g.getDataX(0), g.getDataX( g.getDataSize(0)-1 ) );
     //System.out.println( " ++++++++++++ " + f.getName() + " " + y + " " + ey);
-    f.setParameter(0,1);
+    f.setParameter(0,y);
     f.parameter(0).setError( 2*ey );
     DataFitter.fit( f, g, "Q" );
     f.setOptStat(10);
