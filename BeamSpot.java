@@ -493,7 +493,7 @@ public class BeamSpot {
 
           for( int j=0; j<h.getYAxis().getNBins();j++ ){
             float f = Float.parseFloat(ll[j]);
-            h.setBinContent(i,j,f);
+            h.setBinContent(i,j, f + h.getBinContent(i,j) );
           }
           i++;
         }
