@@ -80,6 +80,7 @@ public class BeamSpot {
 
   float fitRangeScale = 1.0f;
   float targetZ = 25.4f;
+  int binsPerSector = 10;
 
   // settings
   // -----------------------------------------
@@ -108,8 +109,9 @@ public class BeamSpot {
   public void init() {
     final float zmin = (int)(targetZ - 4.4);
     final float zmax = (int)(targetZ + 15.6);
+    final int bins = (int)(6*binsPerSector);
     for( int i = 0; i<theta_bins.length-1; i++ ){
-      H2F h = new H2F("h2_z_phi_"+i, "#theta = "+(theta_bins[i]+theta_bins[i+1])/2,100,zmin,zmax,60,-30,330);
+      H2F h = new H2F("h2_z_phi_"+i, "#theta = "+(theta_bins[i]+theta_bins[i+1])/2,100,zmin,zmax,bins,-30,330);
       h.setTitleX("Z vertex (cm)");
       h.setTitleY("#phi (degrees)");
       GraphErrors g = new GraphErrors();
@@ -130,6 +132,8 @@ public class BeamSpot {
   public void setFitRangeScale( float s ) { fitRangeScale = s; }
 
   public void setTargetZ( float z ) { targetZ = z; }
+
+  public void setBinsPerSector( int n ) { binsPerSector = n; }
 
   // processEvent   
   // ----------------------------------------- 
@@ -250,10 +254,10 @@ public class BeamSpot {
       Y[i] = R[i] * Math.sin( f.getParameter(2) );
 
       EX[i] = Math.sqrt( Math.pow(Math.cos(f.getParameter(2))*ER[i],2) +
-                         Math.pow(R[i]*Math.sin(f.getParameter(2))*f.parameter(2).error(),2) );
+          Math.pow(R[i]*Math.sin(f.getParameter(2))*f.parameter(2).error(),2) );
 
       EY[i] = Math.sqrt( Math.pow(Math.sin(f.getParameter(2))*ER[i],2) +
-                         Math.pow(R[i]*Math.cos(f.getParameter(2))*f.parameter(2).error(),2) );
+          Math.pow(R[i]*Math.cos(f.getParameter(2))*f.parameter(2).error(),2) );
 
       // munge the signs for more human-friendly plots:
       if (R[i] < 0) P[i] += 180;
@@ -312,7 +316,7 @@ public class BeamSpot {
       // truncate fit range if out of bounds:
       if (rmin < h.getAxis().getBinCenter(1)) rmin = h.getAxis().getBinCenter(1);
       if (rmax > h.getAxis().getBinCenter(h.getAxis().getNBins()-1))
-          rmax = h.getAxis().getBinCenter(h.getAxis().getNBins()-1);
+        rmax = h.getAxis().getBinCenter(h.getAxis().getNBins()-1);
 
       // skip if there are not enough entries
       if( h.integral( h.getAxis().getBin(rmin) , h.getAxis().getBin(rmax) ) < 50 ) continue;
@@ -529,13 +533,29 @@ public class BeamSpot {
     d.writeFile(outputPrefix+"_histos.hipo");
   }
 
+  public static H2F userRebin(H2F h, int nbins) {
+    if (h.getYAxis().getNBins() < nbins) {
+      System.err.println("User Binning Ignored:  Not enough bins to rebin.");
+    }
+    else {
+      if (h.getYAxis().getNBins() % nbins != 0) {
+        final String msgfmt = "User Binning Ignored:  # of existing bins (%d) is not a multiple of requested bins (%d).";
+        System.err.println(String.format(msgfmt,h.getYAxis().getNBins(),nbins));
+      }
+      else {
+        h.rebinX((int)((float)h.getYAxis().getNBins() / nbins));
+      }
+    }
+    return h;
+  }
+
   public void readHistograms(String filename) {
     System.out.println("Reading from: "+filename+" ...");
     TDirectory d = new TDirectory();
     d.readFile(filename);
     d.cd();
     for (int i = 0; i<theta_bins.length-1; i++) {
-      H2F h = (H2F)d.getObject("/slices/h2_z_phi_"+i);
+      H2F h = userRebin((H2F)d.getObject("/slices/h2_z_phi_"+i), binsPerSector*6);
       // histograms saved in a HIPO file don't retain full
       // attributes, so here we refill:
       for (int ix = 0; ix<h.getXAxis().getNBins(); ix++) {
@@ -549,14 +569,15 @@ public class BeamSpot {
       }
     }
   }
+
   public void readHistograms(List<String> filenames) {
     for (String f : filenames) readHistograms(f);
   }
 
   public void zoom(GraphErrors g, GraphicsAxis a) {
-      final double min = g.getMin(); 
-      final double max = g.getMax();
-      a.setRange(min - 0.3*(max-min), max + 0.3*(max-min));
+    final double min = g.getMin(); 
+    final double max = g.getMax();
+    a.setRange(min - 0.3*(max-min), max + 0.3*(max-min));
   }
 
   // plots
@@ -777,6 +798,7 @@ public class BeamSpot {
     cli.addOption("-B", "0", "Batch mode, no graphics");
     cli.addOption("-R", "1.0", "Fit range scale factor");
     cli.addOption("-Z", "25.4", "Nominal Z of Target/Foil");
+    cli.addOption("-N", "10", "Phi bins per sector");
     cli.parse(args);
 
     if (cli.getInputList().size()==0) {
@@ -795,6 +817,8 @@ public class BeamSpot {
     bs.setFitRangeScale((float)cli.getOption("-R").doubleValue());
 
     bs.setTargetZ((float)cli.getOption("-Z").doubleValue());
+
+    bs.setBinsPerSector(cli.getOption("-N").intValue());
 
     // call the init method to properly setup all the parameters
     bs.init();
