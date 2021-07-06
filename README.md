@@ -3,23 +3,40 @@
 Analysis of the beam position.
 
 Author: F. Bossù (fbossu at jlab.org)<br>
-Based on S. Stepanynan's work: CLAS12 Note 2020-003
+Based on S. Stepanynan's work: CLAS12 Note 2020-003<br>
+Special thanks to N. Baltzell
 
 ## How to use it
 
-You can use the `run.sh` script or<br>
-`java -Xms1024m -cp ".:$CLAS12DIR/lib/clas/*:$CLAS12DIR/lib/plugins/*" BeamSpot [arguments]`
-
-If you run it on some hipo files, it runs the beam spot analysis. It saves some canvases, the results and a txt file containing the histograms.
-
-If you have run it already (let's say on the farm) and you want to re-analyse the output without the hipo files, then you can run it without arguments as long as the `h2_z_phi.txt` file is in the current directory.
-
-*Examples*<br>
-> ./run.sh *hipo
-
-or
+You can use the `run.sh` script
 
 > ./run.sh
+
+The help message already will give you some info:
+
+>   Usage : BeamSpot  [input1] [input2] ....
+
+>   Options :
+
+>        -B : Batch mode, no graphics (default = 0)
+>        -H : Interpret inputs as HIPO histogram files (instead of DSTs) and add them together (default = 0)
+>        -O : String prefix for output file names (default = BeamSpot)
+>        -T : Interpret input as a TXT histogram file (instead of HIPO DSTs) (default = 0)
+>        -X : Run with no output files (default = 0)
+
+Example: running over many DST files in bach mode and then merging the output for the final analysis<br>
+
+> ./run.sh -O BeamSpot[number] /path/to/rec_clas_003219.evio.[number]*hipo
+
+Changing the `[number]` at your covenience. Then it is possible to merge all the output histograms either reading the output txt or hipo files
+
+> ./run.sh -T 1 *txt
+
+or 
+
+> ./run.sh -H 1 *hipo
+
+The output CCDB table will be then produced.
 
 ## What it does
 
@@ -30,18 +47,11 @@ The z position of the target foil is extracted for each $\phi$ bin and each $\th
 
 The (x,y) position of the beam is then computed using B and $\phi_0$. The average values over the $\theta$ bins are then saved as results.
 
-## What it outputs
-
-The final results are saved in `beamspot_results.txt`<br>
-All the canvases are saved in png files.<br>
-The `h2_z_phi.txt` file contains all the 2D histograms in text format: to be saved for "offline" analysis.
 
 ## Tweaks
 
 Any refined cut on the electron can be added in the functions `checkTrack` and `checkParticle`. <br>
 If the target foil position fits seem to not work properly, you can change the initial paramters of the fit function inside the `analyse`a function.
 
-## TODO
 
-A better CLI
 
