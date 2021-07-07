@@ -78,6 +78,10 @@ public class BeamSpot {
   GraphErrors gX;   // x 
   GraphErrors gY;   // y
 
+  float fitRangeScale = 1.0f;
+  float targetZ = 25.4f;
+  int binsPerSector = 10;
+
   // settings
   // -----------------------------------------
   boolean check_slices;
@@ -103,8 +107,11 @@ public class BeamSpot {
   // initialize histograms
   // -----------------------------------------
   public void init() {
+    final float zmin = (int)(targetZ - 4.4);
+    final float zmax = (int)(targetZ + 15.6);
+    final int bins = (int)(6*binsPerSector);
     for( int i = 0; i<theta_bins.length-1; i++ ){
-      H2F h = new H2F("h2_z_phi_"+i, "#theta = "+(theta_bins[i]+theta_bins[i+1])/2, 100, 20,40,72,-30,330);
+      H2F h = new H2F("h2_z_phi_"+i, "#theta = "+(theta_bins[i]+theta_bins[i+1])/2,100,zmin,zmax,bins,-30,330);
       h.setTitleX("Z vertex (cm)");
       h.setTitleY("#phi (degrees)");
       GraphErrors g = new GraphErrors();
@@ -121,6 +128,12 @@ public class BeamSpot {
   public void setCheckSlices( boolean t ) { check_slices = t; }
 
   public void setThetaBins( double[] bins ) { theta_bins = bins; }
+
+  public void setFitRangeScale( float s ) { fitRangeScale = s; }
+
+  public void setTargetZ( float z ) { targetZ = z; }
+
+  public void setBinsPerSector( int n ) { binsPerSector = n; }
 
   // processEvent   
   // ----------------------------------------- 
@@ -241,10 +254,10 @@ public class BeamSpot {
       Y[i] = R[i] * Math.sin( f.getParameter(2) );
 
       EX[i] = Math.sqrt( Math.pow(Math.cos(f.getParameter(2))*ER[i],2) +
-                         Math.pow(R[i]*Math.sin(f.getParameter(2))*f.parameter(2).error(),2) );
+          Math.pow(R[i]*Math.sin(f.getParameter(2))*f.parameter(2).error(),2) );
 
       EY[i] = Math.sqrt( Math.pow(Math.sin(f.getParameter(2))*ER[i],2) +
-                         Math.pow(R[i]*Math.cos(f.getParameter(2))*f.parameter(2).error(),2) );
+          Math.pow(R[i]*Math.cos(f.getParameter(2))*f.parameter(2).error(),2) );
 
       // munge the signs for more human-friendly plots:
       if (R[i] < 0) P[i] += 180;
@@ -297,13 +310,13 @@ public class BeamSpot {
 
       // check the entries around the peak
       final double rms = getRMSInInterval( h, hmax - 5. , hmax + 5. );
-      double rmin = h.getAxis().getBinCenter( h.getMaximumBin() ) - 2.0*rms;
-      double rmax = h.getAxis().getBinCenter( h.getMaximumBin() ) + 1.5*rms;
+      double rmin = h.getAxis().getBinCenter( h.getMaximumBin() ) - 2.0*rms*fitRangeScale;
+      double rmax = h.getAxis().getBinCenter( h.getMaximumBin() ) + 1.5*rms*fitRangeScale;
 
       // truncate fit range if out of bounds:
       if (rmin < h.getAxis().getBinCenter(1)) rmin = h.getAxis().getBinCenter(1);
       if (rmax > h.getAxis().getBinCenter(h.getAxis().getNBins()-1))
-          rmax = h.getAxis().getBinCenter(h.getAxis().getNBins()-1);
+        rmax = h.getAxis().getBinCenter(h.getAxis().getNBins()-1);
 
       // skip if there are not enough entries
       if( h.integral( h.getAxis().getBin(rmin) , h.getAxis().getBin(rmax) ) < 50 ) continue;
@@ -355,7 +368,7 @@ public class BeamSpot {
     func.setLineWidth(3);
     DataFitter.fit( func, g_results,"Q");
     func.setLineColor(2);
-    func.setOptStat(110);
+    func.setOptStat(11110);
     func.show();
 
     // store the fit function
@@ -520,13 +533,29 @@ public class BeamSpot {
     d.writeFile(outputPrefix+"_histos.hipo");
   }
 
+  public static H2F userRebin(H2F h, int nbins) {
+    if (h.getYAxis().getNBins() < nbins) {
+      System.err.println("User Binning Ignored:  Not enough bins to rebin.");
+    }
+    else {
+      if (h.getYAxis().getNBins() % nbins != 0) {
+        final String msgfmt = "User Binning Ignored:  # of existing bins (%d) is not a multiple of requested bins (%d).";
+        System.err.println(String.format(msgfmt,h.getYAxis().getNBins(),nbins));
+      }
+      else {
+        h.rebinX((int)((float)h.getYAxis().getNBins() / nbins));
+      }
+    }
+    return h;
+  }
+
   public void readHistograms(String filename) {
     System.out.println("Reading from: "+filename+" ...");
     TDirectory d = new TDirectory();
     d.readFile(filename);
     d.cd();
     for (int i = 0; i<theta_bins.length-1; i++) {
-      H2F h = (H2F)d.getObject("/slices/h2_z_phi_"+i);
+      H2F h = userRebin((H2F)d.getObject("/slices/h2_z_phi_"+i), binsPerSector*6);
       // histograms saved in a HIPO file don't retain full
       // attributes, so here we refill:
       for (int ix = 0; ix<h.getXAxis().getNBins(); ix++) {
@@ -540,14 +569,15 @@ public class BeamSpot {
       }
     }
   }
+
   public void readHistograms(List<String> filenames) {
     for (String f : filenames) readHistograms(f);
   }
 
   public void zoom(GraphErrors g, GraphicsAxis a) {
-      final double min = g.getMin(); 
-      final double max = g.getMax();
-      a.setRange(min - 0.3*(max-min), max + 0.3*(max-min));
+    final double min = g.getMin(); 
+    final double max = g.getMax();
+    a.setRange(min - 0.3*(max-min), max + 0.3*(max-min));
   }
 
   // plots
@@ -562,11 +592,11 @@ public class BeamSpot {
       ci.divide(7,8);
       int j=0;
       for( H1F h : a_hz.get(i) ){
-        ci.cd(j);
+        ci.cd(j).setAxisTitleSize(18);
         Func1D func = h.getFunction();
         func.setLineColor( 2 );
         func.setLineWidth( 2 );
-        func.setOptStat(110);
+        func.setOptStat(1110);
         ci.setAxisLabelSize(8);
         ci.setAxisLabelSize(8);
         ci.setAxisTitleSize(8);
@@ -593,7 +623,7 @@ public class BeamSpot {
     JFrame czframe = new JFrame("Beam Spot - Gaussian Fits");
     czframe.add(czfits);
     czframe.pack();
-    czframe.setMinimumSize( new Dimension( 1260,1004 ) );
+    czframe.setMinimumSize( new Dimension( 1400,904 ) );
     czframe.setVisible(true);
 
     EmbeddedCanvasTabbed canvas = new EmbeddedCanvasTabbed( "Parameters" );
@@ -602,9 +632,9 @@ public class BeamSpot {
       canvas.addCanvas( cname );
       EmbeddedCanvas ci = canvas.getCanvas( cname );
       ci.divide(2,1);
-      ci.cd(0);
+      ci.cd(0).setAxisTitleSize(18);
       ci.draw( a_h2_z_phi.get(i) );
-      ci.cd(1);
+      ci.cd(1).setAxisTitleSize(18);
       ci.draw( a_g_results.get(i) );
       if (write) ci.save( outputPrefix+"_bin"+i+".png");
     }
@@ -623,21 +653,21 @@ public class BeamSpot {
 
     EmbeddedCanvas cp = canvas.getCanvas( "Parameters" );
     cp.divide(2,3);
-    cp.cd(0);
-    cp.draw( gZ );
-    this.zoom(gZ, cp.getPad(0).getAxisY());
-    cp.cd(1);
-    cp.draw( gR );
-    this.zoom(gR, cp.getPad(1).getAxisY());
-    cp.cd(2);
-    cp.draw( gP );
-    this.zoom(gP, cp.getPad(2).getAxisY());
-    cp.cd(3);
+    cp.cd(0).setAxisTitleSize(18);
     cp.draw( gX );
-    this.zoom(gX, cp.getPad(3).getAxisY());
-    cp.cd(4);
+    this.zoom(gX, cp.getPad(0).getAxisY());
+    cp.cd(1).setAxisTitleSize(18);
     cp.draw( gY );
-    this.zoom(gY, cp.getPad(4).getAxisY());
+    this.zoom(gY, cp.getPad(1).getAxisY());
+    cp.cd(2).setAxisTitleSize(18);
+    cp.draw( gZ );
+    this.zoom(gZ, cp.getPad(2).getAxisY());
+    cp.cd(3).setAxisTitleSize(18);
+    cp.draw( gP );
+    this.zoom(gP, cp.getPad(3).getAxisY());
+    cp.cd(4).setAxisTitleSize(18);
+    cp.draw( gR );
+    this.zoom(gR, cp.getPad(4).getAxisY());
 
     if (write) cp.save(outputPrefix+"_results.png");
     canvas.setActiveCanvas( "Parameters" );
@@ -766,6 +796,9 @@ public class BeamSpot {
     cli.addOption("-O", "BeamSpot", "String prefix for output file names");
     cli.addOption("-X", "0", "Run with no output files");
     cli.addOption("-B", "0", "Batch mode, no graphics");
+    cli.addOption("-R", "1.0", "Fit range scale factor");
+    cli.addOption("-Z", "25.4", "Nominal Z of Target/Foil");
+    cli.addOption("-N", "10", "Phi bins per sector");
     cli.parse(args);
 
     if (cli.getInputList().size()==0) {
@@ -780,6 +813,12 @@ public class BeamSpot {
     bs.setThetaBins( new double[]{10,11,12,13,14,16,18,22,30} );
 
     bs.setCheckSlices(true);
+
+    bs.setFitRangeScale((float)cli.getOption("-R").doubleValue());
+
+    bs.setTargetZ((float)cli.getOption("-Z").doubleValue());
+
+    bs.setBinsPerSector(cli.getOption("-N").intValue());
 
     // call the init method to properly setup all the parameters
     bs.init();
