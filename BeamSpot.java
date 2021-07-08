@@ -636,7 +636,6 @@ public class BeamSpot {
       ci.draw( a_h2_z_phi.get(i) );
       ci.cd(1).setAxisTitleSize(18);
       ci.draw( a_g_results.get(i) );
-      if (write) ci.save( outputPrefix+"_bin"+i+".png");
     }
 
     // plot the results as a function of theta
@@ -669,7 +668,6 @@ public class BeamSpot {
     cp.draw( gR );
     this.zoom(gR, cp.getPad(4).getAxisY());
 
-    if (write) cp.save(outputPrefix+"_results.png");
     canvas.setActiveCanvas( "Parameters" );
 
     JFrame frame = new JFrame("BeamSpot - Modulation Fits");
@@ -677,6 +675,16 @@ public class BeamSpot {
     frame.pack();
     frame.setMinimumSize( new Dimension( 800, 700 ) );
     frame.setVisible(true);
+
+    // save plots as png files
+    if (write){
+      for( int i=0; i<theta_bins.length-1; i++ ){
+        String cname = String.format("%.1f",(theta_bins[i]+theta_bins[i+1])/2);
+        EmbeddedCanvas ci = canvas.getCanvas( cname );
+        ci.save( outputPrefix+"_bin"+i+".png");
+      }
+      cp.save(outputPrefix+"_results.png");
+    }
 
     // save the results on a txt file
     final double p0Z  = gZ.getFunction().getParameter(0);
@@ -702,6 +710,7 @@ public class BeamSpot {
         wr.close();
       } catch ( IOException e ) {} 
 
+      // writing CCDB tables
       try {
         System.out.println("Writing to: "+outputPrefix+"_ccdb_table.txt ...");
         PrintWriter wr = new PrintWriter( outputPrefix+"_ccdb_table.txt" );
@@ -816,9 +825,14 @@ public class BeamSpot {
 
     bs.setFitRangeScale((float)cli.getOption("-R").doubleValue());
 
-    bs.setTargetZ((float)cli.getOption("-Z").doubleValue());
+    if( cli.getOption("-T").stringValue().equals("0") ) { // options Z and N do not work with txt histograms
+      bs.setTargetZ((float)cli.getOption("-Z").doubleValue());
 
-    bs.setBinsPerSector(cli.getOption("-N").intValue());
+      bs.setBinsPerSector(cli.getOption("-N").intValue());
+    }
+    else {
+      System.out.println( " WARNING: -N and -Z options are incompatible with -T ");
+    }
 
     // call the init method to properly setup all the parameters
     bs.init();
