@@ -361,7 +361,7 @@ public class BeamSpot {
 
     // extract the modulation of the target z position versus phi by fitting the graph
     // the function is defined below
-    FitFunc func = new FitFunc( "f1", 0., 360. );
+    FitFunc func = new FitFunc( "f1", -30., 330. );
     func.setParameter(0,28.0);
     func.setParameter(1,2.0);
     func.setParameter(2, 0.);
