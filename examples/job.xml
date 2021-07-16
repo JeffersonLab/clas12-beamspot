@@ -1,0 +1,24 @@
+
+<Request>
+
+<Project  name="clas12"/>
+<Track    name="analysis"/>
+
+
+<List name="prefix"> 0000 0001</List>
+<ForEach list="prefix">
+  <Job>
+
+  <Name     name="beamspot_${prefix}"/>
+  <Stderr dest="/work/clas12/fbossu/beamspot/BeamSpot/std/${prefix}.err"/>
+  <Stdout dest="/work/clas12/fbossu/beamspot/BeamSpot/std/${prefix}.out"/>
+  <Command>
+<![CDATA[
+/work/clas12/fbossu/beamspot/BeamSpot/steer.sh ${prefix} /volatile/clas12/rg-a/production/pass0/Sping19/v1_1.1.65/calib/recon/006637/rec_clas_006637.evio. | tee /work/clas12/fbossu/beamspot/BeamSpot/test${prefix}.txt
+ ]]>
+ </Command>
+  </Job>
+</ForEach>
+
+
+</Request>
