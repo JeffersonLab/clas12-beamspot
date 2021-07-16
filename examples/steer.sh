@@ -9,7 +9,7 @@ OUTDIR=$BASEDIR/output
 cp -v $BASEDIR/BeamSpot.java .
 cp -v $BASEDIR/run.sh .
 
-./run.sh -B 1 -O BS_$1 $2*$1*hipo
+./run.sh -B 1 -O BS_$1 $2$1*hipo
 
 mkdir -p $OUTDIR
 mv BS_* $OUTDIR

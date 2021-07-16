@@ -1,11 +1,11 @@
 
 <Request>
 
+
 <Project  name="clas12"/>
 <Track    name="analysis"/>
 
-
-<List name="prefix"> 0000 0001</List>
+<List name="prefix"> 000 001 002 003 004 005 006 007 008 009 010 011 012 013 014 015 016 017 018 019 020  </List>
 <ForEach list="prefix">
   <Job>
 
@@ -14,7 +14,7 @@
   <Stdout dest="/work/clas12/fbossu/beamspot/BeamSpot/std/${prefix}.out"/>
   <Command>
 <![CDATA[
-/work/clas12/fbossu/beamspot/BeamSpot/steer.sh ${prefix} /volatile/clas12/rg-a/production/pass0/Sping19/v1_1.1.65/calib/recon/006637/rec_clas_006637.evio. | tee /work/clas12/fbossu/beamspot/BeamSpot/test${prefix}.txt
+/work/clas12/fbossu/beamspot/BeamSpot/examples/steer.sh ${prefix} /volatile/clas12/rg-a/production/pass0/Sping19/v1_1.1.65/calib/recon/006741/rec_clas_006741.evio. 
  ]]>
  </Command>
   </Job>
