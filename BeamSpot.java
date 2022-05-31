@@ -288,8 +288,8 @@ public class BeamSpot {
     // and fit with a gaussian around the target window position
 
     // peak validity window:
-    final double xmin = 20.;
-    final double xmax = 31.;
+    final double xmin = targetZ - 6.;
+    final double xmax = targetZ + 6.;
 
     // for debug 
     ArrayList<H1F> z_slices = new ArrayList<H1F>();
@@ -401,6 +401,10 @@ public class BeamSpot {
 
   private double getMeanInInterval( H1F h, double min, double max ){
 
+    // check tthat the min and max are inside the axis range
+    if( max > h.getAxis().max() ) max = h.getAxis().max() - 0.00001;
+    if( min < h.getAxis().min() ) min = h.getAxis().min() + 0.00001;
+
     double s = 0.;
     double n = 0.;
     int bmin = h.getAxis().getBin( min );
@@ -418,6 +422,9 @@ public class BeamSpot {
   private double getRMSInInterval( H1F h, double min, double max ){
     double m = getMeanInInterval( h, min, max );
 
+    // check tthat the min and max are inside the axis range
+    if( max > h.getAxis().max() ) max = h.getAxis().max() - 0.00001;
+    if( min < h.getAxis().min() ) min = h.getAxis().min() + 0.00001;
     double s = 0.;
     double n = 0.;
     int bmin = h.getAxis().getBin( min );
