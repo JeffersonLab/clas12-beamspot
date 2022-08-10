@@ -260,7 +260,7 @@ public class BeamSpot {
           Math.pow(R[i]*Math.cos(f.getParameter(2))*f.parameter(2).error(),2) );
 
       // munge the signs for more human-friendly plots:
-      if (R[i] < 0) P[i] += 180;
+      if (R[i] < 0)  P[i] = Math.IEEEremainder( P[i] + 180, 360 );
       R[i] = Math.abs(R[i]);
     }
 
